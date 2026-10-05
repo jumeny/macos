@@ -73,26 +73,13 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
-      - name: Validate build inputs
+      - name: Download and verify build IPSWs
         shell: bash
-        env:
-          VZ_MACOS_IPSW: ${{ secrets.VZ_MACOS_IPSW }}
-          VZ_BIG_SUR_IPSW: ${{ secrets.VZ_BIG_SUR_IPSW }}
-          VZ_IPADOS14_IPSW: ${{ secrets.VZ_IPADOS14_IPSW }}
         run: |
           set -euo pipefail
-          for input_name in VZ_MACOS_IPSW VZ_BIG_SUR_IPSW VZ_IPADOS14_IPSW; do
-            value="${!input_name:-}"
-            if [[ -z "$value" ]]; then
-              echo "ERROR: GitHub Actions secret $input_name is not configured." >&2
-              echo "The build needs the matching Apple restore images before the package can be built." >&2
-              exit 1
-            fi
-            [[ -f "$value" ]] || {
-              echo "ERROR: $input_name does not point to a file on the runner: $value" >&2
-              exit 1
-            }
-          done
+          chmod +x VirtualMac/scripts/download-build-inputs.sh
+          VirtualMac/scripts/download-build-inputs.sh
+          ls -lh VirtualMac/build/downloads
 
       - name: Bootstrap pinned build toolchain
         shell: bash
@@ -120,13 +107,14 @@ jobs:
         shell: bash
         env:
           VZ_ROOTHIDE: "1"
-          VZ_MACOS_IPSW: ${{ secrets.VZ_MACOS_IPSW }}
-          VZ_BIG_SUR_IPSW: ${{ secrets.VZ_BIG_SUR_IPSW }}
-          VZ_IPADOS14_IPSW: ${{ secrets.VZ_IPADOS14_IPSW }}
+          VZ_MACOS_IPSW: ${{ github.workspace }}/VirtualMac/build/downloads/UniversalMac_13.2.1_22D68_Restore.ipsw
+          VZ_BIG_SUR_IPSW: ${{ github.workspace }}/VirtualMac/build/downloads/UniversalMac_11.6_20G165_Restore.ipsw
+          VZ_IPADOS14_IPSW: ${{ github.workspace }}/VirtualMac/build/downloads/iPad_Pro_A12X_A12Z_14.5_18E199_Restore.ipsw
         run: |
           set -euo pipefail
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
-          VirtualMac/scripts/build-ipad-deb-roothide.sh
+          echo "Build started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          time VirtualMac/scripts/build-ipad-deb-roothide.sh
 
       - name: Audit RootHide package layout
         shell: bash
