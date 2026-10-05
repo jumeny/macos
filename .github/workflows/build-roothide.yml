@@ -22,9 +22,11 @@ jobs:
         run: |
           set -euo pipefail
           brew update
-          brew install dpkg
+          brew install dpkg ldid
           echo "$(brew --prefix dpkg)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix ldid)/bin" >> "$GITHUB_PATH"
           dpkg-deb --version
+          ldid -V || true
 
       - name: Show toolchain
         run: |
@@ -32,6 +34,7 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           clang --version
           dpkg-deb --version
+          ldid -V || true
 
       - name: Build RootHide package
         shell: bash
