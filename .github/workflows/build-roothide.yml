@@ -26,32 +26,22 @@ jobs:
 
           # The macOS 14 runner image can contain an old openssl@1.1
           # executable linked into /opt/homebrew/bin. The project's ldid
-          # dependency uses openssl@3; remove only that stale link before
-          # Homebrew Bundle installs the declared project dependencies.
+          # dependency uses openssl@3; remove only that stale link first.
           brew unlink openssl@1.1 2>/dev/null || true
 
-          brew update
-
-          # Homebrew 6+ requires explicit trust for third-party taps/formulas.
-          # The project declares hudochenkov/sshpass in its Brewfile, so trust
-          # that exact tap/formula before Bundle evaluates the Brewfile.
-          brew tap hudochenkov/sshpass
-          brew trust hudochenkov/sshpass
-          brew trust --formula hudochenkov/sshpass/sshpass
-
+          # Keep CI focused on the actual package build. Deployment-only
+          # tooling (sshpass/libimobiledevice) is intentionally absent from
+          # VirtualMac/Brewfile, so no third-party tap is needed here.
           brew bundle install --no-upgrade --file=VirtualMac/Brewfile
 
-          # Verify the commands used by the repository's build scripts.
           required_commands=(
             aria2c
             dpkg-deb
             gtar
             go
-            idevice_id
             ldid
             python3
             rsync
-            sshpass
             codesign
             ditto
             dwarfdump
@@ -83,6 +73,27 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
+      - name: Validate build inputs
+        shell: bash
+        env:
+          VZ_MACOS_IPSW: ${{ secrets.VZ_MACOS_IPSW }}
+          VZ_BIG_SUR_IPSW: ${{ secrets.VZ_BIG_SUR_IPSW }}
+          VZ_IPADOS14_IPSW: ${{ secrets.VZ_IPADOS14_IPSW }}
+        run: |
+          set -euo pipefail
+          for input_name in VZ_MACOS_IPSW VZ_BIG_SUR_IPSW VZ_IPADOS14_IPSW; do
+            value="${!input_name:-}"
+            if [[ -z "$value" ]]; then
+              echo "ERROR: GitHub Actions secret $input_name is not configured." >&2
+              echo "The build needs the matching Apple restore images before the package can be built." >&2
+              exit 1
+            fi
+            [[ -f "$value" ]] || {
+              echo "ERROR: $input_name does not point to a file on the runner: $value" >&2
+              exit 1
+            }
+          done
+
       - name: Bootstrap pinned build toolchain
         shell: bash
         run: |
@@ -109,6 +120,9 @@ jobs:
         shell: bash
         env:
           VZ_ROOTHIDE: "1"
+          VZ_MACOS_IPSW: ${{ secrets.VZ_MACOS_IPSW }}
+          VZ_BIG_SUR_IPSW: ${{ secrets.VZ_BIG_SUR_IPSW }}
+          VZ_IPADOS14_IPSW: ${{ secrets.VZ_IPADOS14_IPSW }}
         run: |
           set -euo pipefail
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
