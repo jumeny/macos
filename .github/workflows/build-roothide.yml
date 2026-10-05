@@ -1,0 +1,59 @@
+name: Build RootHide
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [roothide-port]
+
+permissions:
+  contents: read
+
+jobs:
+  build-roothide:
+    runs-on: macos-14
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply RootHide port
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("VirtualMac/patches/VirtualMac-RootHide.patch")
+          s = p.read_text()
+          s = s.replace("/mnt/data/vm-pristine/VirtualMacOniPad-main/", "a/")
+          s = s.replace("/mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/", "b/")
+          p.write_text(s)
+          PY
+          patch -p1 --batch < VirtualMac/patches/VirtualMac-RootHide.patch
+          git diff --check
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          clang --version
+          dpkg-deb --version
+
+      - name: Build RootHide package
+        shell: bash
+        env:
+          VZ_ROOTHIDE: "1"
+        run: |
+          set -euo pipefail
+          chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
+          VirtualMac/scripts/build-ipad-deb-roothide.sh
+
+      - name: Upload RootHide package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VirtualMac-RootHide-deb
+          path: |
+            VirtualMac/build/release-roothide/*.deb
+            build/release-roothide/*.deb
+          if-no-files-found: error
+          retention-days: 14
