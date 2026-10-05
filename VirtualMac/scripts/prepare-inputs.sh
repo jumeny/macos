@@ -5,9 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 
-: "${VZ_MACOS_IPSW:?set VZ_MACOS_IPSW to the 13.2.1 22D68 restore image}"
-: "${VZ_BIG_SUR_IPSW:?set VZ_BIG_SUR_IPSW to the 11.6 20G165 restore image}"
-: "${VZ_IPADOS14_IPSW:?set VZ_IPADOS14_IPSW to the 14.5 18E199 restore image}"
+: "${VZ_MACOS_IPSW:?set VZ_MACOS_IPSW to the 13.2.1 22D68 restore image URL}"
+: "${VZ_BIG_SUR_IPSW:?set VZ_BIG_SUR_IPSW to the 11.6 20G165 restore image URL}"
+: "${VZ_IPADOS14_IPSW:?set VZ_IPADOS14_IPSW to the 14.5 18E199 restore image URL}"
 INCLUDE_IPADOS_AUDIT="${VZ_INCLUDE_IPADOS_AUDIT:-0}"
 if [[ -n "${VZ_IPADOS_IPSW:-}" ]]; then
     INCLUDE_IPADOS_AUDIT=1
@@ -49,9 +49,6 @@ RTADVD="$MAC_ROOT/usr/sbin/rtadvd"
 NETWORK_SHARING_PLIST="$MAC_ROOT/System/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
 BOOTPD_PLIST="$MAC_ROOT/System/Library/LaunchDaemons/bootps.plist"
 
-need_file "$VZ_MACOS_IPSW"
-need_file "$VZ_BIG_SUR_IPSW"
-need_file "$VZ_IPADOS14_IPSW"
 if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
     need_file "$VZ_IPADOS_IPSW"
 fi
@@ -64,21 +61,21 @@ mkdir -p "$MAC_OUT" "$IPAD_OUT"
 mkdir -p "$IPAD14_OUT"
 
 if [[ ! -f "$DSC" || ! -f "$DSC.01" ]]; then
-    "$IPSW" extract --dyld --dyld-arch arm64e \
+    "$IPSW" extract --remote --dyld --dyld-arch arm64e \
         --output "$MAC_OUT" "$VZ_MACOS_IPSW"
 fi
 
 # XNU 20 on iPadOS 14 uses the matching Big Sur Hypervisor userspace ABI.
 # Only its dyld cache is needed; Ventura remains authoritative on iPadOS 15/16.
 if [[ ! -f "$BIG_SUR_DSC" ]]; then
-    "$IPSW" extract --dyld --dyld-arch arm64e \
+    "$IPSW" extract --remote --dyld --dyld-arch arm64e \
         --output "$VZ_BUILD_ROOT/inputs/macos11" "$VZ_BIG_SUR_IPSW"
 fi
 
 if [[ ! -f "$BIG_SUR_INTERNET_SHARING" || ! -f "$BIG_SUR_RTADVD" ||
       ! -f "$BIG_SUR_NETWORK_SHARING_PLIST" ||
       ! -f "$BIG_SUR_BOOTPD_PLIST" ]]; then
-    "$IPSW" extract --files \
+    "$IPSW" extract --remote --files \
         --pattern '^(usr/libexec/InternetSharing|usr/sbin/rtadvd|System/Library/LaunchDaemons/(com\.apple\.NetworkSharing\.plist|bootps\.plist))$' \
         --output "$VZ_BUILD_ROOT/inputs/macos11" "$VZ_BIG_SUR_IPSW"
 fi
@@ -87,7 +84,7 @@ fi
 # behavior specific to that release. Extract it from the matching restore
 # image, but deploy it only under Virtual Mac's private runtime directory.
 if [[ ! -f "$IPAD14_BOOTPD" ]]; then
-    "$IPSW" extract --files \
+    "$IPSW" extract --remote --files \
         --pattern '^usr/libexec/bootpd$' \
         --output "$IPAD14_OUT" "$VZ_IPADOS14_IPSW"
 fi
@@ -95,7 +92,7 @@ fi
 if [[ ! -f "$VMM" || ! -f "$EVENT_TAP" || ! -f "$VZ_LOCALIZABLE" ||
       ! -f "$HV_INFO" || ! -f "$PVG_INFO" ||
       ! -f "$METAL_SERIALIZER_INFO" || ! -f "$DISKIMAGES2_INFO" ]]; then
-    "$IPSW" extract --files \
+    "$IPSW" extract --remote --files \
         --pattern '^(System/Library/Frameworks/(Hypervisor|ParavirtualizedGraphics|Virtualization)\.framework/Versions/A/(Resources/.*|XPCServices/.*)|System/Library/PrivateFrameworks/(MetalSerializer|DiskImages2)\.framework/Versions/A/Resources/.*)$' \
         --output "$MAC_OUT" "$VZ_MACOS_IPSW"
 fi
@@ -103,26 +100,26 @@ fi
 if [[ ! -f "$INTERNET_SHARING" || ! -f "$BOOTPD" ||
       ! -f "$RTADVD" || ! -f "$NETWORK_SHARING_PLIST" ||
       ! -f "$BOOTPD_PLIST" ]]; then
-    "$IPSW" extract --files \
+    "$IPSW" extract --remote --files \
         --pattern '^(usr/libexec/(InternetSharing|bootpd)|usr/sbin/rtadvd|System/Library/LaunchDaemons/(com\.apple\.NetworkSharing\.plist|bootps\.plist))$' \
         --output "$MAC_OUT" "$VZ_MACOS_IPSW"
 fi
 
 MAC_KERNEL="$MAC_OUT/22D68__MacBookAir10,1/kernelcache.release.MacBookAir10,1_MacBookPro17,1_Macmini9,1_iMac21,1_2"
 if [[ ! -f "$MAC_KERNEL" ]]; then
-    "$IPSW" extract --kernel --device MacBookAir10,1 \
+    "$IPSW" extract --remote --kernel --device MacBookAir10,1 \
         --output "$MAC_OUT" "$VZ_MACOS_IPSW"
 fi
 
 IPAD_KERNEL="$IPAD_OUT/20D67__iPad14,6/kernelcache.release.iPad14,3_4_5_6"
 if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
     if [[ ! -f "$IPAD_KERNEL" ]]; then
-        "$IPSW" extract --kernel --device iPad14,6 \
+        "$IPSW" extract --remote --kernel --device iPad14,6 \
             --output "$IPAD_OUT" "$VZ_IPADOS_IPSW"
     fi
 
     if [[ ! -f "$IPAD_DSC" || ! -f "$IPAD_DSC.01" ]]; then
-        "$IPSW" extract --dyld --dyld-arch arm64e \
+        "$IPSW" extract --remote --dyld --dyld-arch arm64e \
             --output "$IPAD_OUT" "$VZ_IPADOS_IPSW"
     fi
 fi
