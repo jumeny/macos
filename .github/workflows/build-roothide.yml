@@ -17,21 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply RootHide port
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("VirtualMac/patches/VirtualMac-RootHide.patch")
-          s = p.read_text()
-          s = s.replace("/mnt/data/vm-pristine/VirtualMacOniPad-main/", "a/")
-          s = s.replace("/mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/", "b/")
-          p.write_text(s)
-          PY
-          patch -p1 --batch < VirtualMac/patches/VirtualMac-RootHide.patch
-          git diff --check
-
       - name: Show toolchain
         run: |
           xcodebuild -version
@@ -48,12 +33,22 @@ jobs:
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
           VirtualMac/scripts/build-ipad-deb-roothide.sh
 
+      - name: Audit RootHide package layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find VirtualMac/build/release-roothide -name '*.deb' -print | head -n1)"
+          test -n "$deb"
+          dpkg-deb -c "$deb" | tee /tmp/package-list.txt
+          grep -F "Applications/VirtualMac.app/" /tmp/package-list.txt
+          grep -F "User/Library/VirtualMac/payload/" /tmp/package-list.txt
+          ! grep -F "/var/root/VirtualMac" /tmp/package-list.txt
+          ! grep -F "/var/jb/" /tmp/package-list.txt
+
       - name: Upload RootHide package
         uses: actions/upload-artifact@v4
         with:
           name: VirtualMac-RootHide-deb
-          path: |
-            VirtualMac/build/release-roothide/*.deb
-            build/release-roothide/*.deb
+          path: VirtualMac/build/release-roothide/*.deb
           if-no-files-found: error
           retention-days: 14
