@@ -53,6 +53,14 @@ BOOL VZIsRootHideEnvironment(void)
     return VZRootHideJailbreakRootPath() != nil;
 }
 
+NSString *VZVirtualMacRuntimeRootPath(void)
+{
+    NSString *jbroot = VZRootHideJailbreakRootPath();
+    if (jbroot.length)
+        return [jbroot stringByAppendingPathComponent:@"User/Library/VirtualMac"];
+    return @"/var/root/VirtualMac";
+}
+
 @interface VZAppSettings ()
 @property(nonatomic, retain) NSMutableDictionary *values;
 @end
