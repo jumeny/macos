@@ -1,0 +1,595 @@
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/ROOT_HIDE_PORT.md /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/ROOT_HIDE_PORT.md
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/ROOT_HIDE_PORT.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/ROOT_HIDE_PORT.md	2026-10-02 12:33:54.812708446 +0000
+@@ -0,0 +1,35 @@
++# Virtual Mac — RootHide port
++
++This tree adds an experimental RootHide packaging/build path for VirtualMacOniPad.
++
++## Target layout
++
++The package installs the large Virtual Mac runtime at:
++
++    <jbroot>/User/Library/VirtualMac/
++
++The iOS application remains at `<jbroot>/Applications/VirtualMac.app` because SpringBoard/uicache expect a conventional application bundle. VM bundles created by the app remain in `/var/mobile/Media/VirtualMac` so they stay user-owned and survive package removal.
++
++## Build
++
++On a macOS machine with the repository's existing prerequisites:
++
++    export VZ_ROOTHIDE=1
++    ./VirtualMac/scripts/build-ipad-deb-roothide.sh
++
++The script uses the existing build pipeline, compiles the path-aware pieces with `-DVM_ROOTHIDE`, and emits an `iphoneos-arm64e` Debian package.
++
++To build only the app IPA after building the app bundle:
++
++    mkdir -p build/VirtualMac-RootHide/Payload
++    cp -R build/ipad-app/VirtualMac.app build/VirtualMac-RootHide/Payload/
++    cd build/VirtualMac-RootHide
++    zip -qry ../VirtualMac-RootHide.ipa Payload
++
++The IPA is only the GUI/application bundle; it is **not** a replacement for the RootHide Debian package because the VM requires the privileged launcher and runtime payload.
++
++## Important limitation
++
++This environment does not contain Apple's Xcode/iPhoneOS SDK, `xcrun`, `ldid`, or the extracted macOS virtualization inputs required by the upstream project, so the final Mach-O binaries cannot be compiled or tested here. The source and package changes are therefore an experimental port, not a claimed working binary release.
++
++The upstream project currently states that Dopamine-roothide is unsupported, and the upstream issue requesting RootHide support remains open. See the project issue and RootHide developer documentation for the runtime/path model.
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-app.sh /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-app.sh
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-app.sh	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-app.sh	2026-10-02 12:33:26.117004426 +0000
+@@ -11,6 +11,8 @@
+ BIN="$APP/VirtualMac"
+ HOOK="$APP/VZHostCompat.dylib"
+ DIAGNOSTICS="$OUT/virtualmac-diagnostics"
++ROOTHIDE_CFLAGS=()
++if [[ "${VZ_ROOTHIDE:-0}" == 1 ]]; then ROOTHIDE_CFLAGS=(-DVM_ROOTHIDE); fi
+ ENTS="$VZ_REPO_ROOT/vz/host/VirtualMac.entitlements"
+ 
+ need_command ldid
+@@ -111,6 +113,7 @@
+     -Wl,-export_dynamic -Wl,-undefined,dynamic_lookup \
+     "$VZ_REPO_ROOT/vz/host/NSViewShim.m" \
+     "$VZ_REPO_ROOT/vz/host/VZAppSettings.m" \
++    "$VZ_REPO_ROOT/vz/host/VMRootPaths.m" \
+     "$VZ_REPO_ROOT/vz/host/VZDiagnostics.m" \
+     "$VZ_REPO_ROOT/vz/host/VZFailureDetailsViewController.m" \
+     "$VZ_REPO_ROOT/vz/host/VZRestoreCatalog.m" \
+@@ -132,8 +135,9 @@
+     -o "$HOOK"
+ xcrun --sdk iphoneos clang \
+     -arch arm64 -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" -fblocks \
+-    -framework Foundation -framework UIKit \
++    -framework Foundation -framework UIKit "${ROOTHIDE_CFLAGS[@]}" \
+     "$VZ_REPO_ROOT/vz/host/VZAppSettings.m" \
++    "$VZ_REPO_ROOT/vz/host/VMRootPaths.m" \
+     "$VZ_REPO_ROOT/vz/host/VZDiagnostics.m" \
+     "$VZ_REPO_ROOT/vz/host/virtualmac_diagnostics_main.m" \
+     -o "$DIAGNOSTICS"
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-deb-roothide.sh /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-deb-roothide.sh
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-deb-roothide.sh	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-deb-roothide.sh	2026-10-02 12:33:54.619412343 +0000
+@@ -0,0 +1,148 @@
++#!/bin/bash
++set -euo pipefail
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++source "$SCRIPT_DIR/lib/common.sh"
++
++need_command dpkg-deb
++need_command plutil
++need_command rsync
++need_command xattr
++
++export VZ_ROOTHIDE=1
++export VZ_SKIP_REBUILD="${VZ_SKIP_REBUILD:-0}"
++if [[ "$VZ_SKIP_REBUILD" != 1 ]]; then
++    "$SCRIPT_DIR/build-ipad-vm.sh"
++    "$SCRIPT_DIR/build-ipad-network-helpers.sh"
++    "$SCRIPT_DIR/build-ipad-network-sharing.sh"
++    "$SCRIPT_DIR/build-ipad-installation.sh"
++    "$SCRIPT_DIR/build-ipad-app.sh"
++    "$SCRIPT_DIR/build-springboard-tweak.sh"
++fi
++
++commit_count="$(git -C "$VZ_REPO_ROOT" rev-list --count HEAD)"
++commit_hash="$(git -C "$VZ_REPO_ROOT" rev-parse --short=10 HEAD)"
++release_version="${VZ_RELEASE_VERSION:-1.2.3}"
++version="2:${release_version}+${commit_count}.${commit_hash}.roothide"
++release="$VZ_BUILD_ROOT/release-roothide"
++stage="$(mktemp -d -t VirtualMac-roothide.XXXXXX)"
++trap 'rm -rf "$stage"' EXIT
++chmod 755 "$stage"
++
++# RootHide package paths are relative to jbroot. Keep the large runtime under
++# User/Library as requested; only the application bundle remains in Applications
++# because SpringBoard/uicache expects a conventional app bundle location.
++mkdir -p "$stage/DEBIAN" \
++    "$stage/User/Library/VirtualMac" \
++    "$stage/Applications" \
++    "$stage/usr/lib/TweakInject" \
++    "$release"
++
++runtime="$stage/User/Library/VirtualMac"
++
++ditto "$VZ_BUILD_ROOT/ipad-installation/payload" "$runtime/payload"
++# Authoritative VM runtime overlays installation's cached compatibility payload.
++ditto "$VZ_BUILD_ROOT/ipad-vm/payload" "$runtime/payload"
++ditto "$VZ_BUILD_ROOT/ipad-installation/install" "$runtime/install"
++
++ditto "$VZ_BUILD_ROOT/ipad-app/VirtualMac.app" "$stage/Applications/VirtualMac.app"
++
++# Keep the tweak outside the private runtime because RootHide's tweak loader
++# discovers TweakInject as a bootstrap component.
++install -m 755 "$VZ_BUILD_ROOT/ipad-tweak/VZKeyboardPassthrough.dylib" \
++    "$stage/usr/lib/TweakInject/VZKeyboardPassthrough.dylib"
++install -m 644 "$VZ_BUILD_ROOT/ipad-tweak/VZKeyboardPassthrough.plist" \
++    "$stage/usr/lib/TweakInject/VZKeyboardPassthrough.plist"
++
++# Runtime data that belongs to the package, but not the VM bundles themselves.
++install -d "$runtime/Diagnostics" "$runtime/Installations" "$runtime/Restore Images"
++
++cat > "$stage/DEBIAN/control" <<CONTROL
++Package: com.mac.virtual.roothide
++Name: Virtual Mac (RootHide)
++Version: $version
++Architecture: iphoneos-arm64e
++Description: Virtual Mac on iPad with RootHide packaging.
++Maintainer: Virtual Mac
++Author: Virtual Mac
++Section: Utilities
++Priority: optional
++Depends: firmware (>= $VZ_IPADOS_MIN_VERSION), firmware (<< 16.4), ellekit
++Tag: role::enduser
++CONTROL
++
++cat > "$stage/DEBIAN/postinst" <<'POSTINST'
++#!/bin/sh
++set -eu
++export PATH=/usr/bin:/bin:/usr/sbin:/sbin
++runtime=/User/Library/VirtualMac
++app=/Applications/VirtualMac.app
++
++# RootHide bootstrap commands use jbroot as their root. No /var/jb paths are
++# used here. VM bundles remain in /var/mobile/Media/VirtualMac.
++mkdir -p "$runtime" /usr/lib/TweakInject
++chmod 755 "$runtime" "$runtime/install" "$runtime/payload" 2>/dev/null || true
++chmod 755 "$runtime/install/install-launcher" 2>/dev/null || true
++
++# Select the host-ABI variants exactly as the legacy package does.
++host_version="$(sw_vers -productVersion)"
++vmm_dir="$runtime/payload/VirtualMachine.xpc/Contents/MacOS"
++vmm_variant="$vmm_dir/com.apple.Virtualization.VirtualMachine.ipados16"
++case "$host_version" in
++  14.*) vmm_variant="$vmm_dir/com.apple.Virtualization.VirtualMachine.ipados14";;
++  15.*) vmm_variant="$vmm_dir/com.apple.Virtualization.VirtualMachine.ipados15";;
++esac
++cp "$vmm_variant" "$vmm_dir/com.apple.Virtualization.VirtualMachine.new"
++chmod 755 "$vmm_dir/com.apple.Virtualization.VirtualMachine.new"
++mv -f "$vmm_dir/com.apple.Virtualization.VirtualMachine.new" "$vmm_dir/com.apple.Virtualization.VirtualMachine"
++
++install_variant="$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation.ipados16"
++case "$host_version" in
++  14.*) install_variant="$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation.ipados14";;
++  15.*) install_variant="$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation.ipados15";;
++esac
++cp "$install_variant" "$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation.new"
++chmod 755 "$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation.new"
++mv -f "$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation.new" "$runtime/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"
++
++# Register the app after its bundle is present. uicache is supplied by the
++# RootHide bootstrap.
++if command -v uicache >/dev/null 2>&1; then
++    uicache -p "$app" >/dev/null 2>&1 || uicache -i com.mac.virtual >/dev/null 2>&1 || true
++fi
++
++echo "Virtual Mac RootHide package installed. Runtime: $runtime"
++POSTINST
++chmod 755 "$stage/DEBIAN/postinst"
++
++cat > "$stage/DEBIAN/prerm" <<'PRERM'
++#!/bin/sh
++set -eu
++export PATH=/usr/bin:/bin:/usr/sbin:/sbin
++killall VirtualMac 2>/dev/null || true
++killall com.apple.Virtualization.VirtualMachine 2>/dev/null || true
++killall com.apple.Virtualization.Installation 2>/dev/null || true
++uicache -u /Applications/VirtualMac.app 2>/dev/null || true
++PRERM
++chmod 755 "$stage/DEBIAN/prerm"
++
++cat > "$stage/DEBIAN/postrm" <<'POSTRM'
++#!/bin/sh
++set -eu
++# Keep user-created VM bundles in /var/mobile/Media/VirtualMac. dpkg owns the
++# runtime under User/Library/VirtualMac and removes it normally.
++if [ "${1:-}" = remove ] || [ "${1:-}" = purge ]; then
++    uicache -a >/dev/null 2>&1 || true
++fi
++POSTRM
++chmod 755 "$stage/DEBIAN/postrm"
++
++# Do not ship build probes/trustcache artifacts.
++rm -rf "$runtime/payload/bin" "$runtime/payload/trustcache.txt"
++find "$stage" -type f \( -name .DS_Store -o -name '._*' \) -delete
++xattr -cr "$stage"
++
++installed_size="$(du -sk "$stage" | awk '{print $1}')"
++sed -i '' -e "s/^Description:/Installed-Size: $installed_size\\nDescription:/" "$stage/DEBIAN/control"
++dpkg-deb --build "$stage" "$release/VirtualMac_RootHide_${release_version}_${commit_hash}.deb" >/dev/null
++
++echo "$release/VirtualMac_RootHide_${release_version}_${commit_hash}.deb"
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-installation.sh /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-installation.sh
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-installation.sh	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/scripts/build-ipad-installation.sh	2026-10-02 12:33:26.117270817 +0000
+@@ -62,6 +62,8 @@
+ IPSW_TOOL="$VZ_BUILD_ROOT/toolchain/bin/ipsw-a2sb"
+ CACHE="$VZ_BUILD_ROOT/cache/device-support-runtime"
+ IPADOS15_OBJC_PATCH="$VZ_REPO_ROOT/vz/patches/patch_ipados15_objc_class_data.py"
++ROOTHIDE_CFLAGS=()
++if [[ "${VZ_ROOTHIDE:-0}" == 1 ]]; then ROOTHIDE_CFLAGS=(-DVM_ROOTHIDE); fi
+ IPADOS15_OBJC_IMPORT_PATCH="$VZ_REPO_ROOT/vz/patches/patch_ipados15_objc_imports.py"
+ 
+ need_command codesign
+@@ -436,7 +438,7 @@
+ xcrun --sdk iphoneos clang \
+     -arch arm64e -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" \
+     -dynamiclib -fblocks -Wl,-undefined,dynamic_lookup \
+-    -install_name "@rpath/VZHostCompat.dylib" \
++    -install_name "@rpath/VZHostCompat.dylib" "${ROOTHIDE_CFLAGS[@]}" \
+     "$VZ_REPO_ROOT/vz/host/vzxpchook.m" \
+     -o "$HOST_HOOK"
+ xcrun --sdk iphoneos clang \
+@@ -448,9 +450,10 @@
+     -o "$PROBE"
+ xcrun --sdk iphoneos clang \
+     -arch arm64 -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" -fblocks \
+-    -framework Foundation -framework Metal -framework UIKit \
++    -framework Foundation -framework Metal -framework UIKit "${ROOTHIDE_CFLAGS[@]}" \
+     -Wl,-export_dynamic \
+     "$VZ_REPO_ROOT/vz/host/NSViewShim.m" \
++    "$VZ_REPO_ROOT/vz/host/VMRootPaths.m" \
+     "$VZ_REPO_ROOT/vz/install/install_macos.m" \
+     -o "$INSTALL_TOOL"
+ xcrun --sdk iphoneos clang \
+@@ -458,7 +461,7 @@
+     "$VZ_REPO_ROOT/vz/development/probes/usb_bridge_probe.c" \
+     -o "$USB_BRIDGE_PROBE"
+ xcrun --sdk iphoneos clang \
+-    -arch arm64 -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" \
++    -arch arm64 -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" "${ROOTHIDE_CFLAGS[@]}" \
+     "$VZ_REPO_ROOT/vz/install/install_launcher.c" \
+     -o "$INSTALL_LAUNCHER"
+ 
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.h /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.h
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.h	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.h	2026-10-02 12:32:52.210125975 +0000
+@@ -0,0 +1,7 @@
++#import <Foundation/Foundation.h>
++
++FOUNDATION_EXPORT NSString *VMRuntimeRootPath(void);
++FOUNDATION_EXPORT NSString *VMJailbreakRootPath(void);
++FOUNDATION_EXPORT const char *VMRuntimeRootCString(void);
++FOUNDATION_EXPORT const char *VMRuntimePathCString(const char *relativePath);
++FOUNDATION_EXPORT const char *VMJailbreakRootCString(void);
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.m	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VMRootPaths.m	2026-10-02 12:32:52.210254814 +0000
+@@ -0,0 +1,51 @@
++#import "VMRootPaths.h"
++#include <limits.h>
++#include <stdio.h>
++
++#if defined(VM_ROOTHIDE)
++extern const char *jbroot(const char *path);
++#endif
++
++NSString *VMJailbreakRootPath(void)
++{
++#if defined(VM_ROOTHIDE)
++    const char *root = jbroot("/");
++    return root ? [NSString stringWithUTF8String:root] : @"/";
++#else
++    return @"/var/jb";
++#endif
++}
++
++NSString *VMRuntimeRootPath(void)
++{
++#if defined(VM_ROOTHIDE)
++    const char *path = jbroot("/User/Library/VirtualMac");
++    return path ? [NSString stringWithUTF8String:path]
++                : [VMJailbreakRootPath() stringByAppendingPathComponent:@"User/Library/VirtualMac"];
++#else
++    return @"/var/root/VirtualMac";
++#endif
++}
++
++const char *VMRuntimeRootCString(void)
++{
++    return VMRuntimeRootPath().fileSystemRepresentation;
++}
++
++const char *VMJailbreakRootCString(void)
++{
++    return VMJailbreakRootPath().fileSystemRepresentation;
++}
++
++const char *VMRuntimePathCString(const char *relativePath)
++{
++    static __thread char path[PATH_MAX];
++    const char *root = VMRuntimeRootCString();
++    if (!relativePath || !relativePath[0]) {
++        snprintf(path, sizeof(path), "%s", root);
++    } else {
++        while (*relativePath == '/') relativePath++;
++        snprintf(path, sizeof(path), "%s/%s", root, relativePath);
++    }
++    return path;
++}
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VZAppSettings.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VZAppSettings.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VZAppSettings.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VZAppSettings.m	2026-10-02 12:33:10.235677119 +0000
+@@ -28,7 +28,10 @@
+ NSString * const VZDebugLoggingModeNextBoot = @"next";
+ NSString * const VZDebugLoggingModeAlways = @"always";
+ 
+-static NSString * const VZSettingsPath = @"/var/mobile/Media/VirtualMac/Settings.plist";
++static NSString *VZSettingsPath(void)
++{
++    return @"/var/mobile/Media/VirtualMac/Settings.plist";
++}
+ static CFStringRef const VZSettingsDarwinNotification =
+     CFSTR("com.mac.virtual.settings-changed");
+ 
+@@ -130,7 +133,7 @@
+ 
+ - (void)save
+ {
+-    NSString *directory = VZSettingsPath.stringByDeletingLastPathComponent;
++    NSString *directory = VZSettingsPath().stringByDeletingLastPathComponent;
+     NSError *error = nil;
+     BOOL directoryReady = [NSFileManager.defaultManager
+         createDirectoryAtPath:directory withIntermediateDirectories:YES
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VZDiagnostics.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VZDiagnostics.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VZDiagnostics.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VZDiagnostics.m	2026-10-02 12:32:32.352165106 +0000
+@@ -1,4 +1,5 @@
+ #import "VZDiagnostics.h"
++#import "VMRootPaths.h"
+ #import "VZAppSettings.h"
+ #import <UIKit/UIKit.h>
+ #import <errno.h>
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VZVMLibraryViewController.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VZVMLibraryViewController.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VZVMLibraryViewController.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VZVMLibraryViewController.m	2026-10-02 12:32:41.639907248 +0000
+@@ -1,4 +1,5 @@
+ #import "VZVMLibraryViewController.h"
++#import "VMRootPaths.h"
+ #import "VZAppSettings.h"
+ #import "VZSettingsViewController.h"
+ #import "VZNewVMViewController.h"
+@@ -589,7 +590,7 @@
+         // files that the UIKit process cannot unlink. The setuid launcher
+         // accepts only descendants of the two artifact directories.
+         const char *launcher =
+-            "/var/root/VirtualMac/install/install-launcher";
++            [[VMRuntimeRootPath() stringByAppendingPathComponent:@"install/install-launcher"] fileSystemRepresentation];
+         char *arguments[] = {(char *)launcher, "--delete-artifact",
+             (char *)path.fileSystemRepresentation, NULL};
+         pid_t child = 0;
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VirtualMacApp.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VirtualMacApp.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/VirtualMacApp.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/VirtualMacApp.m	2026-10-02 12:32:41.639483506 +0000
+@@ -1,4 +1,5 @@
+ #import <Foundation/Foundation.h>
++#import "VMRootPaths.h"
+ #import <GameController/GameController.h>
+ #import <UIKit/UIKit.h>
+ #import <AVFAudio/AVFAudio.h>
+@@ -3806,7 +3807,7 @@
+     NSString *memory = [@(restoreMemorySize) stringValue];
+     NSString *storage = [options[@"StorageSize"] stringValue];
+     const char *launcher =
+-        "/var/root/VirtualMac/install/install-launcher";
++        [[VMRuntimeRootPath() stringByAppendingPathComponent:@"install/install-launcher"] fileSystemRepresentation];
+     char *arguments[] = {
+         (char *)launcher,
+         (char *)url.path.fileSystemRepresentation,
+@@ -3908,7 +3909,7 @@
+             [self.installationTimer invalidate];
+             self.installationTimer = nil;
+             NSString *pid = [NSString stringWithFormat:@"%d", self.installationProcess];
+-            const char *cancelLauncher = "/var/root/VirtualMac/install/install-launcher";
++            const char *cancelLauncher = [[VMRuntimeRootPath() stringByAppendingPathComponent:@"install/install-launcher"] fileSystemRepresentation];
+             char *cancelArguments[] = {(char *)cancelLauncher, "--cancel-install",
+                 (char *)pid.UTF8String,
+                 (char *)self.installationAttemptPath.fileSystemRepresentation, NULL};
+@@ -4531,10 +4532,10 @@
+            [hookPath fileSystemRepresentation]);
+ 
+     const char *images[] = {
+-        "/var/root/VirtualMac/payload/Frameworks/vmnet.framework/vmnet",
+-        "/var/root/VirtualMac/payload/Frameworks/Hypervisor.framework/Hypervisor",
+-        "/var/root/VirtualMac/payload/Frameworks/ParavirtualizedGraphics.framework/ParavirtualizedGraphics",
+-        "/var/root/VirtualMac/payload/Frameworks/Virtualization.framework/Virtualization",
++        [[VMRuntimeRootPath() stringByAppendingPathComponent:@"payload/Frameworks/vmnet.framework/vmnet"] fileSystemRepresentation],
++        [[VMRuntimeRootPath() stringByAppendingPathComponent:@"payload/Frameworks/Hypervisor.framework/Hypervisor"] fileSystemRepresentation],
++        [[VMRuntimeRootPath() stringByAppendingPathComponent:@"payload/Frameworks/ParavirtualizedGraphics.framework/ParavirtualizedGraphics"] fileSystemRepresentation],
++        [[VMRuntimeRootPath() stringByAppendingPathComponent:@"payload/Frameworks/Virtualization.framework/Virtualization"] fileSystemRepresentation],
+     };
+     for (NSUInteger i = 0; i < sizeof(images) / sizeof(images[0]); i++) {
+         if (!dlopen(images[i], RTLD_NOW | RTLD_GLOBAL)) {
+@@ -5169,10 +5170,10 @@
+     unlink("/tmp/vmmhook.log");
+     unlink("/tmp/vmm.stderr.log");
+     setenv("VZ_VMM_BIN",
+-           "/var/root/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
++           [[VMRuntimeRootPath() stringByAppendingPathComponent:@"payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"] fileSystemRepresentation],
+            1);
+     setenv("VZ_AVP_BOOTER",
+-           "/var/root/VirtualMac/payload/Frameworks/Virtualization.framework/Resources/AVPBooter.vmapple2.bin",
++           [[VMRuntimeRootPath() stringByAppendingPathComponent:@"payload/Frameworks/Virtualization.framework/Resources/AVPBooter.vmapple2.bin"] fileSystemRepresentation],
+            1);
+     // Consume the one-shot mode at the actual boot boundary. The current boot
+     // keeps the captured value while Settings immediately returns to Off.
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/vmmhook.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/vmmhook.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/vmmhook.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/vmmhook.m	2026-10-02 12:32:41.640308875 +0000
+@@ -12,6 +12,7 @@
+ // though iOS libxpc exports them, so we declare them ourselves and link with
+ // -undefined dynamic_lookup (resolved at runtime from libSystem/libxpc).
+ #import <objc/message.h>
++#import "VMRootPaths.h"
+ #import <objc/runtime.h>
+ 
+ #include <IOKit/IOKitLib.h>
+@@ -3022,8 +3023,7 @@
+             if (configured && configured[0])
+                 snprintf(fb, sizeof(fb), "%s", configured);
+             else
+-                snprintf(fb, sizeof(fb),
+-                         "/var/root/VirtualMac/payload/%s", base);
++                snprintf(fb, sizeof(fb), "%s/payload/%s", VMRuntimeRootCString(), base);
+             int fd = __open(fb, oflag, mode);
+             void *ret0 = __builtin_return_address(0);
+             void *ret1 = __builtin_return_address(1);
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/vzxpchook.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/vzxpchook.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/host/vzxpchook.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/host/vzxpchook.m	2026-10-02 12:32:52.210503653 +0000
+@@ -65,9 +65,8 @@
+ extern char **environ;
+ 
+ #define VMM_NAME "com.apple.Virtualization.VirtualMachine"
+-#define DEFAULT_VMM_BIN "/var/root/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
+-#define INSTALLATION_NAME "com.apple.Virtualization.Installation"
+-#define DEFAULT_INSTALLATION_BIN "/var/root/VirtualMac/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"
++#define DEFAULT_VMM_BIN (VMRuntimePathCString("payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"))
++#define DEFAULT_INSTALLATION_BIN (VMRuntimePathCString("payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"))
+ #define EP_PORT_OFF  0x18
+ #define DEFAULT_EP_FILE "/tmp/vmm_ep.txt"
+ #define DEFAULT_INSTALLATION_EP_FILE "/tmp/installation_ep.txt"
+@@ -271,7 +270,7 @@
+     if (!endpointFile)
+         return NULL;
+     const char *vmm_bin = getenv("VZ_VMM_BIN");
+-    if (!vmm_bin || !vmm_bin[0]) vmm_bin = DEFAULT_VMM_BIN;
++    if (!vmm_bin || !vmm_bin[0]) vmm_bin = (VMRuntimeRootCString() /* VMM */);
+     // A restore runs through the setuid launcher while ordinary VM boots run
+     // as mobile. Keep their stderr files separate: otherwise the root restore
+     // recreates /tmp/vmm.stderr.log as 0644 and every later mobile
+@@ -454,7 +453,7 @@
+     }
+     const char *binary = getenv("VZ_INSTALLATION_BIN");
+     if (!binary || !binary[0])
+-        binary = DEFAULT_INSTALLATION_BIN;
++        binary = (VMRuntimeRootCString() /* Installation */);
+     char **envp = child_env();
+     char *argv[] = { (char *)binary, NULL };
+     posix_spawn_file_actions_t actions;
+@@ -1013,3 +1012,4 @@
+         real_confstr = dlsym(RTLD_NEXT, "confstr");
+     return real_confstr ? real_confstr(name, buffer, length) : 0;
+ }
++#import "VMRootPaths.h"
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/install/install_launcher.c /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/install/install_launcher.c
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/install/install_launcher.c	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/install/install_launcher.c	2026-10-02 12:33:13.547591255 +0000
+@@ -9,6 +9,10 @@
+ #include <sys/stat.h>
+ #include <unistd.h>
+ 
++#if defined(VM_ROOTHIDE)
++extern const char *jbroot(const char *path);
++#endif
++
+ static int has_prefix(const char *value, const char *prefix)
+ {
+     return strncmp(value, prefix, strlen(prefix)) == 0;
+@@ -41,6 +45,17 @@
+         strchr(value + parent_length + 1, '/') == NULL;
+ }
+ 
++static const char *runtime_path(const char *relative)
++{
++#if defined(VM_ROOTHIDE)
++    return jbroot(relative);
++#else
++    static char path[PATH_MAX];
++    snprintf(path, sizeof(path), "/var/root/VirtualMac/%s", relative[0] == '/' ? relative + 1 : relative);
++    return path;
++#endif
++}
++
+ static const char *bootstrap_tool(const char *rootless, const char *rootful)
+ {
+     return access(rootless, X_OK) == 0 ? rootless : rootful;
+@@ -50,7 +65,7 @@
+ {
+     if (argc == 2 && strcmp(argv[1], "--diagnose") == 0) {
+         const char *script =
+-            "/var/root/VirtualMac/install/start-install.sh";
++            runtime_path("install/start-install.sh");
+         struct stat info;
+         printf("launcher uid=%u euid=%u gid=%u egid=%u\n",
+                getuid(), geteuid(), getgid(), getegid());
+@@ -182,7 +197,7 @@
+         return 1;
+     }
+     execl(bootstrap_tool("/var/jb/bin/sh", "/bin/sh"), "sh",
+-          "/var/root/VirtualMac/install/start-install.sh", argv[1],
++          runtime_path("install/start-install.sh"), argv[1],
+           argv[2], argv[3], argv[4], argv[5], argv[6], argv[7],
+           (char *)NULL);
+     fprintf(stderr, "INSTALL_FAILED\tlauncher exec failed: %s\n",
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/install/install_macos.m /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/install/install_macos.m
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/install/install_macos.m	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/install/install_macos.m	2026-10-02 12:33:10.235571978 +0000
+@@ -1,3 +1,4 @@
++#import "../host/VMRootPaths.h"
+ #import <Foundation/Foundation.h>
+ #import <objc/message.h>
+ #import <objc/runtime.h>
+@@ -342,7 +343,7 @@
+                class_getName(class_getSuperclass([NSView class])),
+                class_getInstanceSize([NSView class]));
+ 
+-        NSString *root = @"/var/root/VirtualMac";
++        NSString *root = VMRuntimeRootPath();
+         setenv("VZ_INSTALLATION_BIN", [[root stringByAppendingPathComponent:
+             @"payload/Installation.xpc/Contents/MacOS/"
+              "com.apple.Virtualization.Installation"] fileSystemRepresentation], 1);
+diff -ruN /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/install/start-install.sh /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/install/start-install.sh
+--- /mnt/data/vm-pristine/VirtualMacOniPad-main/VirtualMac/vz/install/start-install.sh	2026-08-27 21:16:38.000000000 +0000
++++ /mnt/data/VirtualMacOniPad-RootHide-Port/VirtualMacOniPad-main/VirtualMac/vz/install/start-install.sh	2026-10-02 12:33:30.894201978 +0000
+@@ -8,10 +8,17 @@
+ # System applications do not inherit the interactive jailbreak shell PATH.
+ # Keep every utility used below resolvable when this script is exec'd by the
+ # setuid install-launcher from UIKit.
+-jb_prefix=/var/jb
+-test -x /var/jb/usr/bin/launchctl || jb_prefix=
+-launchctl="$jb_prefix/usr/bin/launchctl"
+-PATH=/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin
++if test -d /User/Library/VirtualMac; then
++    # RootHide bootstrap paths are rooted at jbroot, not /var/jb.
++    jb_prefix=
++    launchctl=/usr/bin/launchctl
++    PATH=/usr/bin:/bin:/usr/sbin:/sbin
++else
++    jb_prefix=/var/jb
++    test -x /var/jb/usr/bin/launchctl || jb_prefix=
++    launchctl="$jb_prefix/usr/bin/launchctl"
++    PATH=/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin
++fi
+ export PATH
+ trap 'status=$?; if [ "$status" -ne 0 ] && { [ -z "${log:-}" ] || ! grep -q "INSTALL_FAILED" "$log" 2>/dev/null; }; then echo "INSTALL_FAILED launcher status=$status"; fi' EXIT
+ 
+@@ -21,6 +28,7 @@
+ fi
+ 
+ remote=/var/root/VirtualMac
++if test -d /User/Library/VirtualMac; then remote=/User/Library/VirtualMac; fi
+ host_version=$(sw_vers -productVersion)
+ ipsw=$1
+ staging=$2
