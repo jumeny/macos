@@ -50,7 +50,7 @@ NETWORK_SHARING_PLIST="$MAC_ROOT/System/Library/LaunchDaemons/com.apple.NetworkS
 BOOTPD_PLIST="$MAC_ROOT/System/Library/LaunchDaemons/bootps.plist"
 
 if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
-    need_file "$VZ_IPADOS_IPSW"
+    [[ -n "$VZ_IPADOS_IPSW" ]] || die "VZ_IPADOS_IPSW must be set for the full iPadOS audit"
 fi
 need_file "$IPSW"
 need_command codesign
@@ -175,14 +175,14 @@ hash_line() {
         "$(git -C "$VZ_BUILD_ROOT/toolchain/ipsw-src" rev-parse HEAD)"
     printf 'python\t%s\n' "$("$VZ_BUILD_ROOT/toolchain/venv/bin/python3" --version 2>&1)"
     printf 'dyldextractor\t2.2.2+VirtualMac-arm64e\n'
-    hash_line macos_ipsw "$VZ_MACOS_IPSW"
-    hash_line big_sur_ipsw "$VZ_BIG_SUR_IPSW"
-    hash_line ipados14_ipsw "$VZ_IPADOS14_IPSW"
+    printf 'macos_ipsw_url\t%s\n' "$VZ_MACOS_IPSW"
+    printf 'big_sur_ipsw_url\t%s\n' "$VZ_BIG_SUR_IPSW"
+    printf 'ipados14_ipsw_url\t%s\n' "$VZ_IPADOS14_IPSW"
     hash_line big_sur_dsc "$BIG_SUR_DSC"
     hash_line macos_dsc "$DSC"
     hash_line macos_dsc_01 "$DSC.01"
     if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
-        hash_line ipados_ipsw "$VZ_IPADOS_IPSW"
+        printf 'ipados_ipsw_url\t%s\n' "$VZ_IPADOS_IPSW"
         hash_line ipados_dsc "$IPAD_DSC"
     else
         printf 'ipados_audit\tskipped\n'
