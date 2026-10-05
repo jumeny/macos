@@ -65,9 +65,42 @@ extern char _xpc_type_mach_send[];
 extern char **environ;
 
 #define VMM_NAME "com.apple.Virtualization.VirtualMachine"
-#define DEFAULT_VMM_BIN "/var/root/VirtualMac/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
 #define INSTALLATION_NAME "com.apple.Virtualization.Installation"
-#define DEFAULT_INSTALLATION_BIN "/var/root/VirtualMac/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"
+
+static const char *virtualmac_runtime_root(void)
+{
+    static char root[PATH_MAX];
+    if (root[0])
+        return root;
+    uint32_t size = sizeof(root);
+    if (_NSGetExecutablePath(root, &size) != 0)
+        return "";
+    char *slash = strrchr(root, '/');
+    if (!slash)
+        return "";
+    *slash = '\0';
+    strncat(root, "/.jbroot/User/Library/VirtualMac",
+            sizeof(root) - strlen(root) - 1);
+    return root;
+}
+
+static const char *default_vmm_bin(void)
+{
+    static char path[PATH_MAX];
+    snprintf(path, sizeof(path),
+             "%s/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine",
+             virtualmac_runtime_root());
+    return path;
+}
+
+static const char *default_installation_bin(void)
+{
+    static char path[PATH_MAX];
+    snprintf(path, sizeof(path),
+             "%s/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation",
+             virtualmac_runtime_root());
+    return path;
+}
 #define EP_PORT_OFF  0x18
 #define DEFAULT_EP_FILE "/tmp/vmm_ep.txt"
 #define DEFAULT_INSTALLATION_EP_FILE "/tmp/installation_ep.txt"
@@ -271,7 +304,7 @@ static xo_t spawn_vmm_and_connect(dispatch_queue_t cq) {
     if (!endpointFile)
         return NULL;
     const char *vmm_bin = getenv("VZ_VMM_BIN");
-    if (!vmm_bin || !vmm_bin[0]) vmm_bin = DEFAULT_VMM_BIN;
+    if (!vmm_bin || !vmm_bin[0]) vmm_bin = default_vmm_bin();
     // A restore runs through the setuid launcher while ordinary VM boots run
     // as mobile. Keep their stderr files separate: otherwise the root restore
     // recreates /tmp/vmm.stderr.log as 0644 and every later mobile
@@ -454,7 +487,7 @@ static xo_t spawn_installation_and_connect(dispatch_queue_t cq) {
     }
     const char *binary = getenv("VZ_INSTALLATION_BIN");
     if (!binary || !binary[0])
-        binary = DEFAULT_INSTALLATION_BIN;
+        binary = default_installation_bin();
     char **envp = child_env();
     char *argv[] = { (char *)binary, NULL };
     posix_spawn_file_actions_t actions;
