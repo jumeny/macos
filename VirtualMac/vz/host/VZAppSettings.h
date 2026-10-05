@@ -38,6 +38,7 @@ void VZEnableDebugLoggingForNextBoot(void);
 // remains valid on Taurine and official Dopamine.
 FOUNDATION_EXPORT NSString * _Nullable VZRootHideJailbreakRootPath(void);
 FOUNDATION_EXPORT BOOL VZIsRootHideEnvironment(void);
+FOUNDATION_EXPORT NSString * VZVirtualMacRuntimeRootPath(void);
 
 @interface VZAppSettings : NSObject
 + (instancetype)sharedSettings;
