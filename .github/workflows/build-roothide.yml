@@ -17,24 +17,85 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install packaging tools
+      - name: Install project dependencies
+        shell: bash
+        env:
+          HOMEBREW_BUNDLE_NO_UPGRADE: "1"
+        run: |
+          set -euo pipefail
+
+          # The macOS 14 runner image can contain an old openssl@1.1
+          # executable linked into /opt/homebrew/bin. The project's ldid
+          # dependency uses openssl@3; remove only that stale link before
+          # Homebrew Bundle installs the declared project dependencies.
+          brew unlink openssl@1.1 2>/dev/null || true
+
+          brew update
+          brew bundle install --no-upgrade --file=VirtualMac/Brewfile
+
+          # Verify the commands used by the repository's build scripts.
+          required_commands=(
+            aria2c
+            dpkg-deb
+            gtar
+            go
+            idevice_id
+            ldid
+            python3
+            rsync
+            sshpass
+            codesign
+            ditto
+            dwarfdump
+            install_name_tool
+            lipo
+            otool
+            plutil
+            shasum
+            sips
+            iconutil
+            xcrun
+          )
+
+          for command_name in "${required_commands[@]}"; do
+            command -v "$command_name" >/dev/null 2>&1 || {
+              echo "ERROR: required build command is missing: $command_name" >&2
+              exit 1
+            }
+          done
+
+          echo "Installed project dependencies:"
+          brew bundle list --file=VirtualMac/Brewfile
+          echo
+          echo "Tool versions:"
+          dpkg-deb --version
+          ldid -V || true
+          go version
+          python3 --version
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Bootstrap pinned build toolchain
         shell: bash
         run: |
           set -euo pipefail
-          brew update
-          brew install dpkg ldid
-          echo "$(brew --prefix dpkg)/bin" >> "$GITHUB_PATH"
-          echo "$(brew --prefix ldid)/bin" >> "$GITHUB_PATH"
-          dpkg-deb --version
-          ldid -V || true
+          chmod +x VirtualMac/scripts/bootstrap.sh
+          VirtualMac/scripts/bootstrap.sh
 
-      - name: Show toolchain
+          test -x VirtualMac/build/toolchain/venv/bin/python3
+          test -x VirtualMac/build/toolchain/venv/bin/dyldex
+          test -x VirtualMac/build/toolchain/bin/ipsw-a2sb
+
+          VirtualMac/build/toolchain/venv/bin/python3 --version
+          VirtualMac/build/toolchain/venv/bin/dyldex --help >/dev/null
+          VirtualMac/build/toolchain/bin/ipsw-a2sb dyld a2sb --help >/dev/null
+
+      - name: Show Xcode toolchain
         run: |
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk macosx --show-sdk-version
           clang --version
-          dpkg-deb --version
-          ldid -V || true
 
       - name: Build RootHide package
         shell: bash
