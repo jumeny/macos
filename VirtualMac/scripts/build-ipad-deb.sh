@@ -16,6 +16,8 @@ need_command rsync
 need_command xattr
 
 if [[ "${VZ_SKIP_REBUILD:-0}" != 1 ]]; then
+    # Extract the pinned restore-image inputs before any component builder consumes them.
+    "$SCRIPT_DIR/prepare-inputs.sh"
     "$SCRIPT_DIR/build-ipad-vm.sh"
     "$SCRIPT_DIR/build-ipad-network-helpers.sh"
     "$SCRIPT_DIR/build-ipad-network-sharing.sh"
