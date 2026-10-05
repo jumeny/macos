@@ -17,6 +17,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install packaging tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew update
+          brew install dpkg
+          echo "$(brew --prefix dpkg)/bin" >> "$GITHUB_PATH"
+          dpkg-deb --version
+
       - name: Show toolchain
         run: |
           xcodebuild -version
