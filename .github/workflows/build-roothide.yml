@@ -31,6 +31,14 @@ jobs:
           brew unlink openssl@1.1 2>/dev/null || true
 
           brew update
+
+          # Homebrew 6+ requires explicit trust for third-party taps/formulas.
+          # The project declares hudochenkov/sshpass in its Brewfile, so trust
+          # that exact tap/formula before Bundle evaluates the Brewfile.
+          brew tap hudochenkov/sshpass
+          brew trust hudochenkov/sshpass
+          brew trust --formula hudochenkov/sshpass/sshpass
+
           brew bundle install --no-upgrade --file=VirtualMac/Brewfile
 
           # Verify the commands used by the repository's build scripts.
