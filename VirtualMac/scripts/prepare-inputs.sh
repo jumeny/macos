@@ -53,6 +53,7 @@ if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
     [[ -n "$VZ_IPADOS_IPSW" ]] || die "VZ_IPADOS_IPSW must be set for the full iPadOS audit"
 fi
 need_file "$IPSW"
+need_command aria2c
 need_command codesign
 need_command lipo
 need_command shasum
@@ -66,27 +67,69 @@ if [[ ! -f "$DSC" || ! -f "$DSC.01" ]]; then
 fi
 
 # XNU 20 on iPadOS 14 uses the matching Big Sur Hypervisor userspace ABI.
-# Only its dyld cache is needed; Ventura remains authoritative on iPadOS 15/16.
-if [[ ! -f "$BIG_SUR_DSC" ]]; then
-    "$IPSW" extract --remote --dyld --dyld-arch arm64e \
-        --output "$VZ_BUILD_ROOT/inputs/macos11" "$VZ_BIG_SUR_IPSW"
-fi
+# The pinned ipsw source can remote-extract Ventura, but its remote metadata
+# path cannot resolve the older Big Sur 11.6 restore image. Download each
+# legacy image into the build tree only while extracting it, then remove it.
+download_local() {
+    local url="$1"
+    local expected="$2"
+    local name="$(basename "$url")"
+    local out="$VZ_BUILD_ROOT/inputs/.downloads/$name"
+    mkdir -p "$(dirname "$out")"
 
-if [[ ! -f "$BIG_SUR_INTERNET_SHARING" || ! -f "$BIG_SUR_RTADVD" ||
-      ! -f "$BIG_SUR_NETWORK_SHARING_PLIST" ||
+    if [[ ! -f "$out" ]]; then
+        echo "Downloading local-extract input: $name"
+        aria2c --continue=true --allow-overwrite=false --auto-file-renaming=false \
+            --max-connection-per-server=8 --split=8 --min-split-size=10M \
+            --summary-interval=15 --console-log-level=notice \
+            --dir="$(dirname "$out")" --out="$name" "$url"
+    fi
+
+    local actual
+    actual="$(shasum -a 256 "$out" | awk '{print $1}')"
+    [[ "$actual" == "$expected" ]] || {
+        rm -f "$out"
+        die "SHA-256 mismatch for $name: expected $expected, got $actual"
+    }
+    printf '%s\n' "$out"
+}
+
+if [[ ! -f "$BIG_SUR_DSC" || ! -f "$BIG_SUR_INTERNET_SHARING" ||
+      ! -f "$BIG_SUR_RTADVD" || ! -f "$BIG_SUR_NETWORK_SHARING_PLIST" ||
       ! -f "$BIG_SUR_BOOTPD_PLIST" ]]; then
-    "$IPSW" extract --remote --files \
-        --pattern '^(usr/libexec/InternetSharing|usr/sbin/rtadvd|System/Library/LaunchDaemons/(com\.apple\.NetworkSharing\.plist|bootps\.plist))$' \
-        --output "$VZ_BUILD_ROOT/inputs/macos11" "$VZ_BIG_SUR_IPSW"
+    BIG_SUR_LOCAL="$(download_local \
+        "$VZ_BIG_SUR_IPSW" \
+        "9bc6b9e0d42bb892ee139a8d88fc5e8ce2931d57743d8e3ed1ce45aa5da8add6")"
+
+    if [[ ! -f "$BIG_SUR_DSC" ]]; then
+        "$IPSW" extract --dyld --dyld-arch arm64e \
+            --output "$VZ_BUILD_ROOT/inputs/macos11" "$BIG_SUR_LOCAL"
+    fi
+
+    if [[ ! -f "$BIG_SUR_INTERNET_SHARING" || ! -f "$BIG_SUR_RTADVD" ||
+          ! -f "$BIG_SUR_NETWORK_SHARING_PLIST" ||
+          ! -f "$BIG_SUR_BOOTPD_PLIST" ]]; then
+        "$IPSW" extract --files \
+            --pattern '^(usr/libexec/InternetSharing|usr/sbin/rtadvd|System/Library/LaunchDaemons/(com\.apple\.NetworkSharing\.plist|bootps\.plist))$' \
+            --output "$VZ_BUILD_ROOT/inputs/macos11" "$BIG_SUR_LOCAL"
+    fi
+
+    rm -f "$BIG_SUR_LOCAL"
+    rmdir "$VZ_BUILD_ROOT/inputs/.downloads" 2>/dev/null || true
 fi
 
 # The iPadOS 14 DHCP executable has authenticated pointers and socket-launch
 # behavior specific to that release. Extract it from the matching restore
 # image, but deploy it only under Virtual Mac's private runtime directory.
 if [[ ! -f "$IPAD14_BOOTPD" ]]; then
-    "$IPSW" extract --remote --files \
+    IPAD14_LOCAL="$(download_local \
+        "$VZ_IPADOS14_IPSW" \
+        "e6ac263ae3124aa4ca1424ec9d395b0d798c349e9c31f9964783e1ddf58b1446")"
+    "$IPSW" extract --files \
         --pattern '^usr/libexec/bootpd$' \
-        --output "$IPAD14_OUT" "$VZ_IPADOS14_IPSW"
+        --output "$IPAD14_OUT" "$IPAD14_LOCAL"
+    rm -f "$IPAD14_LOCAL"
+    rmdir "$VZ_BUILD_ROOT/inputs/.downloads" 2>/dev/null || true
 fi
 
 if [[ ! -f "$VMM" || ! -f "$EVENT_TAP" || ! -f "$VZ_LOCALIZABLE" ||
@@ -175,9 +218,9 @@ hash_line() {
         "$(git -C "$VZ_BUILD_ROOT/toolchain/ipsw-src" rev-parse HEAD)"
     printf 'python\t%s\n' "$("$VZ_BUILD_ROOT/toolchain/venv/bin/python3" --version 2>&1)"
     printf 'dyldextractor\t2.2.2+VirtualMac-arm64e\n'
-    printf 'macos_ipsw_url\t%s\n' "$VZ_MACOS_IPSW"
-    printf 'big_sur_ipsw_url\t%s\n' "$VZ_BIG_SUR_IPSW"
-    printf 'ipados14_ipsw_url\t%s\n' "$VZ_IPADOS14_IPSW"
+    printf 'macos_ipsw_sha256\t%s\n' '0310220c8a540dc53a92ec9f9e0894db627d8f97fd18c3275eb96865a6e5fe04'
+    printf 'big_sur_ipsw_sha256\t%s\n' '9bc6b9e0d42bb892ee139a8d88fc5e8ce2931d57743d8e3ed1ce45aa5da8add6'
+    printf 'ipados14_ipsw_sha256\t%s\n' 'e6ac263ae3124aa4ca1424ec9d395b0d798c349e9c31f9964783e1ddf58b1446'
     hash_line big_sur_dsc "$BIG_SUR_DSC"
     hash_line macos_dsc "$DSC"
     hash_line macos_dsc_01 "$DSC.01"
