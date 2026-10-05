@@ -10,14 +10,6 @@ need_command git
 need_command patch
 need_command python3
 
-install_formula() {
-    local formula="$1"
-    local command_name="${2:-$1}"
-    if ! command -v "$command_name" >/dev/null 2>&1; then
-        brew install "$formula"
-    fi
-}
-
 if ! command -v ldid >/dev/null 2>&1 ||
    ! brew list --versions ldid-procursus >/dev/null 2>&1; then
     # Saurik's older Homebrew formula emits a dual-CodeDirectory signature
@@ -28,11 +20,10 @@ if ! command -v ldid >/dev/null 2>&1 ||
     fi
     brew install ldid-procursus
 fi
-install_formula libimobiledevice idevice_id
-install_formula go
-if ! command -v sshpass >/dev/null 2>&1; then
-    brew install hudochenkov/sshpass/sshpass
-fi
+
+# libimobiledevice and sshpass are only needed by the optional deployment
+# helpers in common.sh. They are not used to produce the standalone package,
+# so keep them out of the build bootstrap and CI dependency graph.
 
 TOOLCHAIN="$VZ_BUILD_ROOT/toolchain"
 VENV="$TOOLCHAIN/venv"
