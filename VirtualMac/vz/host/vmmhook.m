@@ -67,6 +67,28 @@ extern int   memorystatus_control(uint32_t command, int32_t pid,
                                   size_t buffer_size);
 static void logf_(const char *fmt, ...);
 
+static const char *vmm_jbroot_path(void)
+{
+    static char path[PATH_MAX];
+    if (path[0])
+        return path;
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) != 0)
+        return "";
+    char *slash = strrchr(path, '/');
+    if (!slash)
+        return "";
+    *slash = '\0';
+    strncat(path, "/.jbroot", sizeof(path) - strlen(path) - 1);
+    char resolved[PATH_MAX];
+    if (!realpath(path, resolved))
+        return "";
+    strncpy(path, resolved, sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    return path;
+}
+
+
 // Stable userspace memorystatus_control ABI across the supported kernels:
 // https://github.com/apple-oss-distributions/xnu/blob/xnu-7195.141.2/bsd/sys/kern_memorystatus.h
 // https://github.com/apple-oss-distributions/xnu/blob/xnu-8019.41.5/bsd/sys/kern_memorystatus.h
@@ -3023,7 +3045,7 @@ static int vmm_open(const char *path, int oflag, ...) {
                 snprintf(fb, sizeof(fb), "%s", configured);
             else
                 snprintf(fb, sizeof(fb),
-                         "/var/root/VirtualMac/payload/%s", base);
+                         "%s/User/Library/VirtualMac/payload/%s", vmm_jbroot_path(), base);
             int fd = __open(fb, oflag, mode);
             void *ret0 = __builtin_return_address(0);
             void *ret1 = __builtin_return_address(1);
