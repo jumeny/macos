@@ -31,6 +31,7 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <mach/mach.h>
+#include <mach-o/dyld.h>
 #include <mach/arm/thread_status.h>
 #include <ptrauth.h>
 #include <pthread.h>
