@@ -111,6 +111,7 @@ jobs:
           # install later; the Ventura IPSW here supplies the host virtualization runtime.
           VZ_IPADOS_TARGETS: "16"
           VZ_IPADOS_MIN_VERSION: "16.0"
+          VZ_AUDIT_HOST_VERSIONS: "16.3.1"
           VZ_MACOS_IPSW: "https://updates.cdn-apple.com/2023WinterFCS/fullrestores/032-48346/EFF99C1E-C408-4E7A-A448-12E1468AF06C/UniversalMac_13.2.1_22D68_Restore.ipsw"
         run: |
           set -euo pipefail
