@@ -3,6 +3,18 @@
 set -eu
 export PATH=/var/jb/usr/bin:/var/jb/usr/sbin:/var/jb/bin:/var/jb/sbin:/usr/bin:/bin:/usr/sbin:/sbin
 
+# Never allow the normal package to coexist with the native RootHide build or RootHidePatcher.
+if command -v dpkg-query >/dev/null 2>&1; then
+    if dpkg-query -W -f='${Status}' com.mac.virtual.roothide 2>/dev/null | grep -q 'install ok installed'; then
+        echo "Normal Virtual Mac cannot be installed while Virtual Mac RootHide (com.mac.virtual.roothide) is installed. Remove the RootHide package first." >&2
+        exit 1
+    fi
+    if dpkg-query -W -f='${Status}' com.roothide.patcher 2>/dev/null | grep -q 'install ok installed'; then
+        echo "Normal Virtual Mac cannot be installed while RootHidePatcher (com.roothide.patcher) is installed. Remove RootHidePatcher first." >&2
+        exit 1
+    fi
+fi
+
 # Prepare ElleKit's canonical loader directory for postinst. Some bootstrap
 # revisions omit it, while their MobileSubstrate compatibility path may be a
 # dangling symlink. The tweak is copied here only after dpkg has cleaned paths
