@@ -15,6 +15,5 @@ Section: Utilities
 Priority: optional
 Installed-Size: @INSTALLED_SIZE@
 Depends: firmware (>= @MIN_IOS@), firmware (<< 16.4), ellekit | org.coolstar.libhooker
-Conflicts: com.mac.virtual.roothide, com.roothide.patcher
-Conflicts: com.mac.virtual.roothide, com.roothide.patcher
+Conflicts: com.mac.virtual.roothide
 Tag: role::enduser
