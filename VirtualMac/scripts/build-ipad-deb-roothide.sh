@@ -18,15 +18,20 @@ need_command shasum
 need_command xcrun
 
 BASE_DEB="${VZ_BASE_DEB:-$VZ_BUILD_ROOT/downloads/VirtualMac_1.2.3.deb}"
-BASE_SHA256=435ce1dc76b9e18b1547c77b84e2cf33ffe40a16be63e366f181d14709a41aa0
+BASE_SHA256="${VZ_BASE_DEB_SHA256:-435ce1dc76b9e18b1547c77b84e2cf33ffe40a16be63e366f181d14709a41aa0}"
+PACKAGE_VERSION="${VZ_PACKAGE_VERSION:-0.0.1b+rh}"
+if [[ ! "$PACKAGE_VERSION" =~ ^[0-9][0-9A-Za-z.+:~_-]*$ ]]; then
+    die "invalid Debian package version: $PACKAGE_VERSION"
+fi
 need_file "$BASE_DEB"
-actual="$(shasum -a 256 "$BASE_DEB" | awk '{print $1}')"
-if [[ "$actual" != "$BASE_SHA256" ]]; then
+actual="$(shasum -a 256 "$BASE_DEB" | awk "{print \$1}")"
+if [[ -n "$BASE_SHA256" && "$actual" != "$BASE_SHA256" ]]; then
     if [[ "${VZ_ALLOW_UNVERIFIED_BASE:-0}" != "1" ]]; then
-        die "base Virtual Mac 1.2.3 checksum mismatch: $actual"
+        die "base Virtual Mac checksum mismatch: $actual"
     fi
     echo "WARNING: accepting unverified base package checksum $actual" >&2
 fi
+BASE_SOURCE_ID="$actual"
 
 export VZ_ROOTHIDE=1
 export VZ_IPADOS_MIN_VERSION="${VZ_IPADOS_MIN_VERSION:-16.0}"
@@ -40,7 +45,7 @@ need_file "$ROOTHIDE_SDK/roothide/libroothide.tbd"
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 OUT="$VZ_BUILD_ROOT/release-roothide"
 STAGE="$OUT/stage"
-SOURCE="$OUT/base-$BASE_SHA256"
+SOURCE="$OUT/base-$BASE_SOURCE_ID"
 RUNTIME="$STAGE/User/Library/VirtualMac"
 APP="$STAGE/Applications/VirtualMac.app"
 PAYLOAD="$RUNTIME/payload"
@@ -121,7 +126,7 @@ done
 cat > "$STAGE/DEBIAN/control" <<'CONTROL'
 Package: com.mac.virtual
 Name: Virtual Mac RootHide
-Version: 0.0.1b+rh
+Version: $PACKAGE_VERSION
 Architecture: iphoneos-arm64e
 Description: Virtual Mac for RootHide on iPadOS 16.
 Maintainer: Virtual Mac
@@ -267,5 +272,6 @@ chmod 755 "$STAGE/DEBIAN/"*
 python3 "$SCRIPT_DIR/audit-roothide-package-stage.py" "$STAGE"
 rm -f "$OUT"/*.deb
 mkdir -p "$OUT"
-dpkg-deb --root-owner-group --build "$STAGE" "$OUT/VirtualMac-RootHide-0.0.1b+rh.deb"
-echo "RootHide package built: $OUT/VirtualMac-RootHide-0.0.1b+rh.deb"
+OUTPUT_DEB="$OUT/VirtualMac-RootHide-$PACKAGE_VERSION.deb"
+dpkg-deb --root-owner-group --build "$STAGE" "$OUTPUT_DEB"
+echo "RootHide package built: $OUTPUT_DEB"
