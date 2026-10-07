@@ -96,6 +96,12 @@ jobs:
           xcrun --sdk macosx --show-sdk-version
           clang --version
 
+      - name: Restore dyld extraction cache
+        uses: actions/cache@v4
+        with:
+          path: VirtualMac/build/frameworks/raw
+          key: roothide-dyld-raw-v1-${{ hashFiles('VirtualMac/requirements.lock.txt', 'VirtualMac/scripts/bootstrap.sh', 'VirtualMac/scripts/build-frameworks.sh') }}
+
       - name: Build RootHide package
         shell: bash
         env:
