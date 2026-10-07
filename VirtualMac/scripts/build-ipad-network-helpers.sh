@@ -28,7 +28,9 @@ need_command ldid
 need_command lipo
 need_command plutil
 need_file "$SOURCE_BOOTPD"
-need_file "$SOURCE_IPADOS14_BOOTPD"
+if (( ! VZ_IPADOS_16_ONLY )); then
+    need_file "$SOURCE_IPADOS14_BOOTPD"
+fi
 need_file "$SOURCE_RTADVD"
 need_file "$SOURCE_BOOTPD_PLIST"
 need_file "$ENTS"
@@ -90,6 +92,13 @@ codesign --force --sign - --entitlements "$ENTS" \
     --generate-entitlement-der "$BOOTPD"
 codesign --verify --strict "$BOOTPD"
 
+if (( VZ_IPADOS_16_ONLY )); then
+    # No iPadOS 14 bootpd input is downloaded for the fast profile. Keep an
+    # inert compatibility slot populated with the proven iPadOS 16 helper.
+    cp "$BOOTPD" "$BOOTPD_IPADOS14"
+    codesign --force --sign - --entitlements "$ENTS" \
+        --generate-entitlement-der "$BOOTPD_IPADOS14"
+else
 # Preserve the matching iPadOS 14 implementation and modify only its writable
 # configuration pathname. Never install this file over /usr/libexec/bootpd.
 cp "$SOURCE_IPADOS14_BOOTPD" "$BOOTPD_IPADOS14"
@@ -100,6 +109,7 @@ cp "$SOURCE_IPADOS14_BOOTPD" "$BOOTPD_IPADOS14"
 codesign --force --sign - --entitlements "$ENTS" \
     --generate-entitlement-der "$BOOTPD_IPADOS14"
 codesign --verify --strict "$BOOTPD_IPADOS14"
+fi
 codesign --verify --strict "$OD_COMPAT"
 codesign --verify --strict "$IOKIT14_COMPAT"
 for executable in "$BOOTPD" "$BOOTPD_IPADOS14"; do
