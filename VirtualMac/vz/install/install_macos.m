@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #import "../host/NSViewShim.h"
+#import "../host/VZPaths.h"
 
 static id gVirtualMachine;
 static id gInstaller;
@@ -342,7 +343,7 @@ int main(int argc, const char *argv[])
                class_getName(class_getSuperclass([NSView class])),
                class_getInstanceSize([NSView class]));
 
-        NSString *root = @"/var/root/VirtualMac";
+        NSString *root = @(VZRuntimePath(""));
         setenv("VZ_INSTALLATION_BIN", [[root stringByAppendingPathComponent:
             @"payload/Installation.xpc/Contents/MacOS/"
              "com.apple.Virtualization.Installation"] fileSystemRepresentation], 1);
