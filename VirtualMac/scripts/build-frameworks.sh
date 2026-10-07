@@ -35,16 +35,40 @@ images=(
     "Virtualization.framework/Versions/A/Virtualization|Virtualization|DCFC0A79-7728-3089-94D7-1508E71F38E5"
 )
 
+# Extract a pair of independent raw images at a time. Each dyldex invocation
+# scans the same multi-GB shared cache; bounded parallelism reduces wall time
+# without overwhelming the runner's memory and I/O.
+extract_raw() {
+    local spec="$1"
+    IFS='|' read -r image name _ <<< "$spec"
+    local raw="$RAW_DIR/$name"
+    if [[ ! -f "$raw" ]]; then
+        echo "extracting raw framework image: $name"
+        "$DYLDEX" -e "$image" -o "$raw" "$DSC"
+    fi
+}
+
+raw_pids=()
+for spec in "${images[@]}"; do
+    extract_raw "$spec" &
+    raw_pids+=("$!")
+    if (\${#raw_pids[@]} >= 2); then
+        for pid in "${raw_pids[@]}"; do
+            wait "$pid"
+        done
+        raw_pids=()
+    fi
+done
+for pid in "${raw_pids[@]}"; do
+    wait "$pid"
+done
+
 for spec in "${images[@]}"; do
     IFS='|' read -r image name expected_uuid <<< "$spec"
     raw="$RAW_DIR/$name"
     mac="$MAC_DIR/$name"
     proto="$IOS_DIR/$name.proto"
     ios="$IOS_DIR/$name"
-
-    if [[ ! -f "$raw" ]]; then
-        "$DYLDEX" -e "$image" -o "$raw" "$DSC"
-    fi
 
     VZ_MAC=1 VZ_IPSW="$IPSW" \
         "$PYTHON" "$VZ_REPO_ROOT/vz/uncache.py" \
@@ -112,6 +136,7 @@ metal_serializer_proto="$IOS_DIR/$metal_serializer_name.proto"
 metal_serializer_ios="$IOS_DIR/$metal_serializer_name"
 
 if [[ ! -f "$metal_serializer_raw" ]]; then
+    echo "extracting raw framework image: MetalSerializer"
     "$DYLDEX" -e "$metal_serializer_image" \
         -o "$metal_serializer_raw" "$DSC"
 fi
