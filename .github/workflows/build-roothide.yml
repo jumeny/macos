@@ -7,11 +7,15 @@ on:
         description: "HTTPS URL for the base Virtual Mac .deb"
         required: true
         type: string
+      package_version:
+        description: "Debian package version for the RootHide package (for example 1.2.3-rh)"
+        required: true
+        type: string
 permissions:
   contents: write
 
 concurrency:
-  group: roothide-build
+  group: roothide-build-${{ inputs.package_version }}
   cancel-in-progress: true
 
 jobs:
@@ -28,6 +32,10 @@ jobs:
           set -euo pipefail
           test -n "${{ inputs.base_deb_url }}" || {
             echo "base_deb_url must not be empty" >&2
+            exit 1
+          }
+          test -n "${{ inputs.package_version }}" || {
+            echo "package_version must not be empty" >&2
             exit 1
           }
           bash -n VirtualMac/scripts/build-ipad-deb-roothide.sh
@@ -82,11 +90,12 @@ jobs:
         env:
           VZ_ROOTHIDE: "1"
           VZ_BASE_DEB: "VirtualMac/build/downloads/base-runtime.deb"
+          VZ_PACKAGE_VERSION: ${{ inputs.package_version }}
         run: |
           set -euo pipefail
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
           VZ_BASE_DEB="$VZ_BASE_DEB" VZ_BASE_DEB_SHA256="" VZ_ALLOW_UNVERIFIED_BASE=1 \
-            VirtualMac/scripts/build-ipad-deb-roothide.sh
+            VZ_PACKAGE_VERSION="$VZ_PACKAGE_VERSION" VirtualMac/scripts/build-ipad-deb-roothide.sh
 
       - name: Audit package
         id: package_metadata
@@ -97,6 +106,7 @@ jobs:
           version="$(dpkg-deb -f "$deb" Version)"
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Requested RootHide Debian version: ${{ inputs.package_version }}"
           echo "Built Debian version: $version"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb" | tee /tmp/roothide-package.txt
