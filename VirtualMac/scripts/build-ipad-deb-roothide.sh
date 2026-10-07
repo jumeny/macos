@@ -56,7 +56,7 @@ rsync -a "$SOURCE/var/root/VirtualMac/bootstrap-common/" "$RUNTIME/bootstrap-com
 rsync -a "$SOURCE/var/root/VirtualMac/rootful/" "$RUNTIME/rootful/"
 rsync -a "$SOURCE/var/root/VirtualMac/bootstrap-rootful/" "$RUNTIME/bootstrap-rootful/"
 rsync -a "$SOURCE/var/jb/Applications/VirtualMac.app/" "$APP/"
-mkdir -p "$STAGE/usr/lib" "$STAGE/usr/libexec" "$STAGE/usr/sbin" "$STAGE/usr/bin" "$STAGE/usr/Library/LaunchDaemons"
+mkdir -p "$STAGE/usr/lib" "$STAGE/usr/libexec" "$STAGE/usr/sbin" "$STAGE/usr/bin" "$STAGE/Library/LaunchDaemons"
 rsync -a "$SOURCE/var/jb/usr/lib/" "$STAGE/usr/lib/"
 rsync -a "$SOURCE/var/jb/usr/libexec/" "$STAGE/usr/libexec/"
 rsync -a "$SOURCE/var/jb/usr/sbin/" "$STAGE/usr/sbin/"
@@ -158,8 +158,15 @@ done
 if command -v launchctl >/dev/null 2>&1; then
     for plist in "$JBROOT/Library/LaunchDaemons/com.apple.NetworkSharing.plist"                  "$JBROOT/Library/LaunchDaemons/com.apple.bootpd.plist"; do
         test -f "$plist" || continue
-        label="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$plist" 2>/dev/null || true)"
-        test -n "$label" && launchctl bootstrap system "$plist" 2>/dev/null || true
+        label="$(sed -n '/<key>Label</{
+            n
+            s/.*<string>\([^<]*\)<\/string>.*/\1/p
+            q
+        }' "$plist" 2>/dev/null || true)"
+        test -n "$label" && {
+            launchctl bootstrap user/501 "$plist" 2>/dev/null ||
+                launchctl bootstrap system "$plist" 2>/dev/null || true
+        }
     done
 fi
 if command -v uicache >/dev/null 2>&1; then
