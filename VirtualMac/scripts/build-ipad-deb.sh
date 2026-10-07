@@ -166,6 +166,7 @@ for name in InternetSharing.ipados14; do
         --generate-entitlement-der "$ROOTFUL/usr/libexec/VirtualMac/$name"
 done
 
+if vz_has_ipados_target 14; then
 # Use the matching iPadOS 14 implementation, privately. Its package signature
 # is preflighted by Taurine; Apple's /usr/libexec/bootpd remains untouched.
 install -m 755 "$VZ_BUILD_ROOT/ipad-network-helpers/bootpd.ipados14" \
@@ -217,6 +218,9 @@ plutil -remove KeepAlive \
     2>/dev/null || true
 plutil -insert KeepAlive -bool YES \
     "$ROOTFUL_HELPERS/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
+
+fi
+
 # Never package host filesystem metadata. Component builders also remove it
 # before signing, but this catches metadata from every independently built
 # app, XPC, framework, and packaging input.
