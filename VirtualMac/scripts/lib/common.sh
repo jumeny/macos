@@ -4,21 +4,45 @@ set -euo pipefail
 
 VZ_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VZ_BUILD_ROOT="${VZ_BUILD_ROOT:-$VZ_REPO_ROOT/build}"
-# Every shipped binary uses the oldest currently supported deployment target.
-# A single package therefore runs on iPadOS 14.5 through 16.3.1; runtime
-# compatibility decisions must be made from the actual host OS instead of by
-# producing OS-specific packages.  The override exists only for bring-up of
-# host-specific diagnostic builds.
+
+# Build-time host compatibility profile. The default preserves the original
+# multi-host package; targeted CI builds can select only the host generations
+# they actually need, e.g. VZ_IPADOS_TARGETS=16.
+VZ_IPADOS_TARGETS="${VZ_IPADOS_TARGETS:-14,15,16}"
+
+vz_has_ipados_target() {
+    local target="$1"
+    case ",$VZ_IPADOS_TARGETS," in
+        *,"$target",*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if ! vz_has_ipados_target 14 && ! vz_has_ipados_target 15 &&
+   ! vz_has_ipados_target 16; then
+    echo "error: VZ_IPADOS_TARGETS must include at least one of 14, 15, 16" >&2
+    exit 1
+fi
+
+# The selected deployment floor matches the oldest host ABI represented by
+# this package. Targeted iPadOS 16 builds use a 16.0 deployment target and
+# therefore do not carry older-host compatibility baggage.
 VZ_IPADOS_MIN_VERSION="${VZ_IPADOS_MIN_VERSION:-14.5}"
 
 case "$VZ_IPADOS_MIN_VERSION" in
-    14.5|15.0) ;;
+    14.5|15.0|16.0) ;;
     *)
-        echo "error: VZ_IPADOS_MIN_VERSION must be 14.5 or 15.0" >&2
+        echo "error: VZ_IPADOS_MIN_VERSION must be 14.5, 15.0, or 16.0" >&2
         exit 1
         ;;
 esac
-export VZ_IPADOS_MIN_VERSION
+
+if vz_has_ipados_target 16 && ! vz_has_ipados_target 14 &&
+   ! vz_has_ipados_target 15 && [[ "$VZ_IPADOS_MIN_VERSION" == 14.5 ]]; then
+    VZ_IPADOS_MIN_VERSION=16.0
+fi
+
+export VZ_IPADOS_TARGETS VZ_IPADOS_MIN_VERSION
 
 if [[ "${VZ_IGNORE_ENV_FILE:-0}" != 1 && -f "$VZ_REPO_ROOT/.env" ]]; then
     set -a
