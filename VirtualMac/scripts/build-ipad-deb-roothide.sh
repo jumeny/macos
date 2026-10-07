@@ -19,11 +19,11 @@ need_command xcrun
 
 BASE_DEB="${VZ_BASE_DEB:-$VZ_BUILD_ROOT/downloads/VirtualMac_1.2.3.deb}"
 BASE_SHA256="${VZ_BASE_DEB_SHA256:-435ce1dc76b9e18b1547c77b84e2cf33ffe40a16be63e366f181d14709a41aa0}"
-PACKAGE_VERSION="${VZ_PACKAGE_VERSION:-0.0.1b+rh}"
-if [[ ! "$PACKAGE_VERSION" =~ ^[0-9][0-9A-Za-z.+:~_-]*$ ]]; then
-    die "invalid Debian package version: $PACKAGE_VERSION"
-fi
 need_file "$BASE_DEB"
+PACKAGE_VERSION="$(dpkg-deb -f "$BASE_DEB" Version)"
+if [[ -z "$PACKAGE_VERSION" || ! "$PACKAGE_VERSION" =~ ^[0-9][0-9A-Za-z.+:~_-]*$ ]]; then
+    die "base Debian package has an invalid Version field: ${PACKAGE_VERSION:-<empty>}"
+fi
 actual="$(shasum -a 256 "$BASE_DEB" | awk "{print \$1}")"
 if [[ -n "$BASE_SHA256" && "$actual" != "$BASE_SHA256" ]]; then
     if [[ "${VZ_ALLOW_UNVERIFIED_BASE:-0}" != "1" ]]; then
@@ -123,7 +123,7 @@ done
 
 # Keep the iPadOS 16 host choice explicit in the package metadata and control
 # paths; older host variants remain in the base runtime but are not selectable.
-cat > "$STAGE/DEBIAN/control" <<'CONTROL'
+cat > "$STAGE/DEBIAN/control" <<CONTROL
 Package: com.mac.virtual
 Name: Virtual Mac RootHide
 Version: $PACKAGE_VERSION
