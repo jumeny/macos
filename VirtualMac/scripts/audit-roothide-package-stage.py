@@ -17,9 +17,10 @@ for line in control.splitlines():
     fields[key] = value.strip()
 
 required = {
-    "Package": "com.mac.virtual",
+    "Package": "com.mac.virtual.roothide",
     "Architecture": "iphoneos-arm64e",
-    "Depends": "firmware (>= 16.0), firmware (<< 16.4), roothide",
+    "Depends": "firmware (>= 16.0), firmware (<< 16.4), roothide, dopamine-basebin-link, ellekit",
+    "Conflicts": "com.mac.virtual, com.roothide.patcher",
 }
 for key, expected in required.items():
     if fields.get(key) != expected:
