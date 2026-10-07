@@ -19,10 +19,10 @@ need_command xcrun
 
 BASE_DEB="${VZ_BASE_DEB:-$VZ_BUILD_ROOT/downloads/VirtualMac_1.2.3.deb}"
 BASE_SHA256="${VZ_BASE_DEB_SHA256:-435ce1dc76b9e18b1547c77b84e2cf33ffe40a16be63e366f181d14709a41aa0}"
+PACKAGE_VERSION="${VZ_PACKAGE_VERSION:-1.2.3-rh}"
 need_file "$BASE_DEB"
-PACKAGE_VERSION="$(dpkg-deb -f "$BASE_DEB" Version)"
 if [[ -z "$PACKAGE_VERSION" || ! "$PACKAGE_VERSION" =~ ^[0-9][0-9A-Za-z.+:~_-]*$ ]]; then
-    die "base Debian package has an invalid Version field: ${PACKAGE_VERSION:-<empty>}"
+    die "invalid RootHide Debian package version: ${PACKAGE_VERSION:-<empty>}"
 fi
 actual="$(shasum -a 256 "$BASE_DEB" | awk "{print \$1}")"
 if [[ -n "$BASE_SHA256" && "$actual" != "$BASE_SHA256" ]]; then
@@ -124,7 +124,7 @@ done
 # Keep the iPadOS 16 host choice explicit in the package metadata and control
 # paths; older host variants remain in the base runtime but are not selectable.
 cat > "$STAGE/DEBIAN/control" <<CONTROL
-Package: com.mac.virtual
+Package: com.mac.virtual.roothide
 Name: Virtual Mac RootHide
 Version: $PACKAGE_VERSION
 Architecture: iphoneos-arm64e
@@ -134,6 +134,7 @@ Author: Virtual Mac
 Section: Utilities
 Priority: optional
 Depends: firmware (>= 16.0), firmware (<< 16.4), roothide, dopamine-basebin-link, ellekit
+Conflicts: com.mac.virtual, com.roothide.patcher
 Tag: role::enduser
 CONTROL
 
@@ -187,6 +188,18 @@ POSTINST
 cat > "$STAGE/DEBIAN/preinst" <<'PREINST'
 #!/bin/sh
 set -eu
+
+if command -v dpkg-query >/dev/null 2>&1; then
+    if dpkg-query -W -f='${Status}' com.mac.virtual 2>/dev/null | grep -q 'install ok installed'; then
+        echo "Virtual Mac RootHide cannot be installed while normal Virtual Mac (com.mac.virtual) is installed. Remove the normal package first." >&2
+        exit 1
+    fi
+    if dpkg-query -W -f='${Status}' com.roothide.patcher 2>/dev/null | grep -q 'install ok installed'; then
+        echo "Virtual Mac RootHide cannot be installed while RootHidePatcher (com.roothide.patcher) is installed. Remove RootHidePatcher first." >&2
+        exit 1
+    fi
+fi
+
 JBROOT="$(jbroot /)"
 export JBROOT
 exit 0
