@@ -52,7 +52,7 @@ raw_pids=()
 for spec in "${images[@]}"; do
     extract_raw "$spec" &
     raw_pids+=("$!")
-    if (\${#raw_pids[@]} >= 2); then
+    if ((${#raw_pids[@]} >= 2)); then
         for pid in "${raw_pids[@]}"; do
             wait "$pid"
         done
