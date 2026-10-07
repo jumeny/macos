@@ -75,6 +75,8 @@ ditto "$VZ_BUILD_ROOT/ipad-installation/payload" \
 # tree in the final package.
 ditto "$VZ_BUILD_ROOT/ipad-vm/payload" \
     "$STAGE/var/root/VirtualMac/payload"
+printf '%s\n' "$VZ_IPADOS_TARGETS" > "$STAGE/var/root/VirtualMac/host-targets"
+chmod 644 "$STAGE/var/root/VirtualMac/host-targets"
 ditto "$VZ_BUILD_ROOT/ipad-installation/install" \
     "$STAGE/var/root/VirtualMac/install"
 ditto "$VZ_BUILD_ROOT/ipad-app/VirtualMac.app" \
