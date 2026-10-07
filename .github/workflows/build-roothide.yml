@@ -8,8 +8,34 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: roothide-build
+  cancel-in-progress: true
+
 jobs:
+  validate-roothide-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Validate shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n VirtualMac/scripts/lib/common.sh
+          bash -n VirtualMac/scripts/prepare-inputs.sh
+          bash -n VirtualMac/scripts/build-ipad-vm.sh
+          bash -n VirtualMac/scripts/build-ipad-network-sharing.sh
+          bash -n VirtualMac/scripts/build-ipad-network-helpers.sh
+          bash -n VirtualMac/scripts/build-ipad-deb.sh
+          bash -n VirtualMac/scripts/build-ipad-deb-roothide.sh
+          bash -n VirtualMac/packaging/DEBIAN/postinst
+
   build-roothide:
+    needs: validate-roothide-scripts:
     runs-on: macos-14
     steps:
       - name: Checkout fork
