@@ -13,6 +13,16 @@ HOOK="$APP/VZHostCompat.dylib"
 DIAGNOSTICS="$OUT/virtualmac-diagnostics"
 ENTS="$VZ_REPO_ROOT/vz/host/VirtualMac.entitlements"
 
+RH_CFLAGS=()
+RH_LDFLAGS=()
+if [[ "${VZ_ROOTHIDE:-0}" == "1" ]]; then
+    ROOTHIDE_SDK="${VZ_ROOTHIDE_SDK:-$VZ_BUILD_ROOT/toolchain/roothide-sdk/devkit}"
+    need_file "$ROOTHIDE_SDK/roothide.h"
+    need_file "$ROOTHIDE_SDK/roothide/libroothide.tbd"
+    RH_CFLAGS=(-DVZ_ROOTHIDE -I"$ROOTHIDE_SDK")
+    RH_LDFLAGS=(-L"$ROOTHIDE_SDK/roothide" -lroothide)
+fi
+
 need_command ldid
 need_command plutil
 need_command sips
@@ -104,6 +114,7 @@ for spec in \
 done
 
 xcrun --sdk iphoneos clang \
+    "${RH_CFLAGS[@]}" \
     -arch arm64 -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" -fblocks \
     -framework AVFAudio -framework CoreImage -framework Foundation \
     -framework GameController -framework Metal -framework Security -framework UIKit \
@@ -123,19 +134,24 @@ xcrun --sdk iphoneos clang \
     "$VZ_REPO_ROOT/vz/host/VZTrackpadScrollBridge.m" \
     "$VZ_REPO_ROOT/vz/host/VZVMLibraryViewController.m" \
     "$VZ_REPO_ROOT/vz/host/VirtualMacApp.m" \
+    "${RH_LDFLAGS[@]}" \
     -o "$BIN"
 xcrun --sdk iphoneos clang \
+    "${RH_CFLAGS[@]}" \
     -arch arm64e -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" \
     -dynamiclib -fblocks -Wl,-undefined,dynamic_lookup \
     -install_name "@executable_path/VZHostCompat.dylib" \
     "$VZ_REPO_ROOT/vz/host/vzxpchook.m" \
+    "${RH_LDFLAGS[@]}" \
     -o "$HOOK"
 xcrun --sdk iphoneos clang \
+    "${RH_CFLAGS[@]}" \
     -arch arm64 -miphoneos-version-min="$VZ_IPADOS_MIN_VERSION" -isysroot "$SDK" -fblocks \
     -framework Foundation -framework UIKit \
     "$VZ_REPO_ROOT/vz/host/VZAppSettings.m" \
     "$VZ_REPO_ROOT/vz/host/VZDiagnostics.m" \
     "$VZ_REPO_ROOT/vz/host/virtualmac_diagnostics_main.m" \
+    "${RH_LDFLAGS[@]}" \
     -o "$DIAGNOSTICS"
 
 xattr -cr "$APP"
