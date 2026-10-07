@@ -25,7 +25,7 @@ for line in required:
 for item in stage.rglob("*"):
     if not item.is_file() or item.is_symlink():
         continue
-    if item.suffix not in {".plist", ".sh", ".xml", ""} and item.name != "control":
+    if "DEBIAN" not in item.parts and item.suffix != ".plist":
         continue
     try:
         data = item.read_text(errors="ignore")
