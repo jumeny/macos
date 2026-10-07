@@ -3,6 +3,10 @@ name: Build RootHide
 on:
   workflow_dispatch:
     inputs:
+      base_deb_url:
+        description: "HTTPS URL for the base Virtual Mac .deb"
+        required: true
+        type: string
       package_version:
         description: "Debian package version (also used as the GitHub release tag and release name)"
         required: true
@@ -21,12 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: roothide-port
+          ref: main
 
       - name: Validate RootHide scripts
         shell: bash
         run: |
           set -euo pipefail
+          test -n "${{ inputs.base_deb_url }}" || {
+            echo "base_deb_url must not be empty" >&2
+            exit 1
+          }
           test -n "${{ inputs.package_version }}" || {
             echo "package_version must not be empty" >&2
             exit 1
@@ -47,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: roothide-port
+          ref: main
           fetch-depth: 0
 
       - name: Install build dependencies
@@ -64,13 +72,14 @@ jobs:
 
       - name: Acquire base runtime
         env:
-          VZ_BASE_DEB_URL: "https://github.com/nfzerox/VirtualMacOniPad/releases/download/1.2.3/VirtualMac_1.2.3.deb"
+          VZ_BASE_DEB_URL: ${{ inputs.base_deb_url }}
         run: |
           set -euo pipefail
           mkdir -p VirtualMac/build/downloads
-          base="VirtualMac/build/downloads/VirtualMac_1.2.3.deb"
+          base="VirtualMac/build/downloads/base-runtime.deb"
           curl --fail --location --retry 3 --output "$base.part" "$VZ_BASE_DEB_URL"
           mv "$base.part" "$base"
+          dpkg-deb -I "$base" >/dev/null
 
       - name: Bootstrap RootHide SDK
         run: |
@@ -81,7 +90,7 @@ jobs:
       - name: Build RootHide package from base runtime
         env:
           VZ_ROOTHIDE: "1"
-          VZ_BASE_DEB: "VirtualMac/build/downloads/VirtualMac_1.2.3.deb"
+          VZ_BASE_DEB: "VirtualMac/build/downloads/base-runtime.deb"
           VZ_PACKAGE_VERSION: ${{ inputs.package_version }}
         run: |
           set -euo pipefail
