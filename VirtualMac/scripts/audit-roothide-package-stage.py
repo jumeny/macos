@@ -9,9 +9,10 @@ if stage is None or not stage.is_dir():
     raise SystemExit("usage: audit-roothide-package-stage.py STAGE")
 
 control = (stage / "DEBIAN/control").read_text()
+expected_version = __import__("os").environ.get("VZ_PACKAGE_VERSION", "0.0.1b+rh")
 required = [
     "Package: com.mac.virtual",
-    "Version: 0.0.1b+rh",
+    f"Version: {expected_version}",
     "Architecture: iphoneos-arm64e",
     "Depends: firmware (>= 16.0), firmware (<< 16.4), roothide",
 ]
@@ -31,7 +32,7 @@ for item in stage.rglob("*"):
         data = item.read_text(errors="ignore")
     except OSError:
         continue
-    for forbidden in ("/var/jb/", "/var/root/VirtualMac"):
+    for forbidden in ("/var/jb/", "/var/root/VirtualMac", "/var/root/"):
         if forbidden in data:
             raise SystemExit(f"forbidden absolute RootHide path leaked into {item}: {forbidden}")
 
@@ -54,6 +55,31 @@ installer = runtime / "payload/Installation.xpc/Contents/MacOS/com.apple.Virtual
 for item in (vmm, installer):
     subprocess.run(["otool", "-L", str(item)], check=True, stdout=subprocess.DEVNULL)
 
+# RootHide's developer guide requires these baseline entitlements on jailbreak
+# executables/apps. Verify the important runtime entry points after the final
+# signing pass instead of merely trusting the build script.
+required_entitlements = (
+    "platform-application",
+    "com.apple.private.security.no-sandbox",
+    "com.apple.private.security.storage.AppBundles",
+    "com.apple.private.security.storage.AppDataContainers",
+)
+for item in (
+    app / "VirtualMac",
+    runtime / "install/install-launcher",
+    runtime / "install/install-macos",
+    vmm,
+    installer,
+):
+    try:
+        raw = subprocess.check_output(["ldid", "-e", str(item)], stderr=subprocess.DEVNULL)
+        entitlements = plistlib.loads(raw) if raw.strip() else {}
+    except (subprocess.CalledProcessError, plistlib.InvalidFileException) as exc:
+        raise SystemExit(f"could not read entitlements from {item}: {exc}")
+    missing = [key for key in required_entitlements if entitlements.get(key) is not True]
+    if missing:
+        raise SystemExit(f"missing RootHide entitlements in {item}: {', '.join(missing)}")
+
 plists = list((stage / "Library/LaunchDaemons").glob("*.plist"))
 for plist in plists:
     value = plistlib.loads(plist.read_bytes())
@@ -61,7 +87,7 @@ for plist in plists:
         raw = value.get(key)
         values = raw if isinstance(raw, list) else [raw] if raw else []
         for path in values:
-            if isinstance(path, str) and ("/var/jb/" in path or "/var/root/VirtualMac" in path):
+            if isinstance(path, str) and ("/var/jb/" in path or "/var/root/" in path):
                 raise SystemExit(f"hard-coded jailbreak path in {plist}: {path}")
 
 print("RootHide package audit passed")
