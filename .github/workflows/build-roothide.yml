@@ -121,4 +121,4 @@ jobs:
           name: ${{ steps.package_metadata.outputs.version }}
           prerelease: true
           generate_release_notes: true
-          files: VirtualMac/build/release-roothide/VirtualMac-RootHide-${{ inputs.package_version }}.deb
+          files: VirtualMac/build/release-roothide/VirtualMac-RootHide-${{ steps.package_metadata.outputs.version }}.deb
