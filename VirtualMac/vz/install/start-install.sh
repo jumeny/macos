@@ -14,7 +14,7 @@ jbroot="$(CDPATH= cd -- "$remote/../../.." && pwd)"
 jb_prefix="$jbroot"
 test -x "$jb_prefix/usr/bin/launchctl" || jb_prefix=
 launchctl="$jb_prefix/usr/bin/launchctl"
-PATH="$jbroot/usr/bin:$jbroot/bin:/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PATH="$jbroot/usr/bin:$jbroot/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 trap 'status=$?; if [ "$status" -ne 0 ] && { [ -z "${log:-}" ] || ! grep -q "INSTALL_FAILED" "$log" 2>/dev/null; }; then echo "INSTALL_FAILED launcher status=$status"; fi' EXIT
 
