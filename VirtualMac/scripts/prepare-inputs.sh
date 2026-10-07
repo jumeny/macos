@@ -7,113 +7,21 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 : "${VZ_MACOS_IPSW:?set VZ_MACOS_IPSW to the 13.2.1 22D68 restore image URL}"
 if vz_has_ipados_target 14; then
-    : "${VZ_BIG_SUR_IPSW:?set VZ_BIG_SUR_IPSW to the 11.6 20G165 restore image URL}"
-    : "${VZ_IPADOS14_IPSW:?set VZ_IPADOS14_IPSW to the 14.5 18E199 restore image URL}"
-fi
-INCLUDE_IPADOS_AUDIT="${VZ_INCLUDE_IPADOS_AUDIT:-0}"
-if [[ -n "${VZ_IPADOS_IPSW:-}" ]]; then
-    INCLUDE_IPADOS_AUDIT=1
-fi
-[[ "$INCLUDE_IPADOS_AUDIT" == 0 || "$INCLUDE_IPADOS_AUDIT" == 1 ]] ||
-    die "VZ_INCLUDE_IPADOS_AUDIT must be 0 or 1"
-if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
-    : "${VZ_IPADOS_IPSW:?set VZ_IPADOS_IPSW for the full iPadOS audit}"
-fi
-IPSW="$VZ_BUILD_ROOT/toolchain/bin/ipsw-a2sb"
-MAC_OUT="$VZ_BUILD_ROOT/inputs/macos"
-IPAD_OUT="$VZ_BUILD_ROOT/inputs/ipados"
-IPAD14_OUT="$VZ_BUILD_ROOT/inputs/ipados14"
-MAC_ROOT="$MAC_OUT/22D68__MacOS"
-BIG_SUR_ROOT="$VZ_BUILD_ROOT/inputs/macos11/20G165__MacOS"
-DSC="$MAC_ROOT/dyld_shared_cache_arm64e"
-BIG_SUR_DSC="$BIG_SUR_ROOT/dyld_shared_cache_arm64e"
-BIG_SUR_INTERNET_SHARING="$BIG_SUR_ROOT/usr/libexec/InternetSharing"
-BIG_SUR_RTADVD="$BIG_SUR_ROOT/usr/sbin/rtadvd"
-BIG_SUR_NETWORK_SHARING_PLIST="$BIG_SUR_ROOT/System/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
-BIG_SUR_BOOTPD_PLIST="$BIG_SUR_ROOT/System/Library/LaunchDaemons/bootps.plist"
-IPAD14_ROOT=""
-IPAD14_BOOTPD=""
-IPAD_DSC="$IPAD_OUT/20D67__iPad14,3_4_5_6/dyld_shared_cache_arm64e"
-VZ_ROOT="$MAC_ROOT/System/Library/Frameworks/Virtualization.framework/Versions/A"
-VMM="$VZ_ROOT/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine"
-EVENT_TAP="$VZ_ROOT/XPCServices/com.apple.Virtualization.EventTap.xpc/Contents/MacOS/com.apple.Virtualization.EventTap"
-RES="$VZ_ROOT/Resources"
-HV_INFO="$MAC_ROOT/System/Library/Frameworks/Hypervisor.framework/Versions/A/Resources/Info.plist"
-PVG_INFO="$MAC_ROOT/System/Library/Frameworks/ParavirtualizedGraphics.framework/Versions/A/Resources/Info.plist"
-METAL_SERIALIZER_INFO="$MAC_ROOT/System/Library/PrivateFrameworks/MetalSerializer.framework/Versions/A/Resources/Info.plist"
-DISKIMAGES2_INFO="$MAC_ROOT/System/Library/PrivateFrameworks/DiskImages2.framework/Versions/A/Resources/Info.plist"
-VZ_LOCALIZABLE="$RES/Localizable.loctable"
-THIN="$MAC_OUT/VirtualMachine.arm64e"
-MANIFEST="$VZ_BUILD_ROOT/inputs/manifest.txt"
-INTERNET_SHARING="$MAC_ROOT/usr/libexec/InternetSharing"
-BOOTPD="$MAC_ROOT/usr/libexec/bootpd"
-RTADVD="$MAC_ROOT/usr/sbin/rtadvd"
-NETWORK_SHARING_PLIST="$MAC_ROOT/System/Library/LaunchDaemons/com.apple.NetworkSharing.plist"
-BOOTPD_PLIST="$MAC_ROOT/System/Library/LaunchDaemons/bootps.plist"
-
-if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
-    [[ -n "$VZ_IPADOS_IPSW" ]] || die "VZ_IPADOS_IPSW must be set for the full iPadOS audit"
-fi
-need_file "$IPSW"
-need_command aria2c
-need_command codesign
-need_command lipo
-need_command shasum
-
-mkdir -p "$MAC_OUT" "$IPAD_OUT"
-mkdir -p "$IPAD14_OUT"
-
-if [[ ! -f "$DSC" || ! -f "$DSC.01" ]]; then
-    "$IPSW" extract --remote --dyld --dyld-arch arm64e         --output "$MAC_OUT" "$VZ_MACOS_IPSW"
-fi
-
-download_local() {
-    local url="$1"
-    local expected="$2"
-    local name="$(basename "$url")"
-    local out="$VZ_BUILD_ROOT/inputs/.downloads/$name"
-    mkdir -p "$(dirname "$out")"
-
-    if [[ ! -f "$out" ]]; then
-        echo "Downloading local-extract input: $name" >&2
-        aria2c --continue=true --allow-overwrite=false --auto-file-renaming=false             --max-connection-per-server=8 --split=8 --min-split-size=10M             --summary-interval=15 --console-log-level=notice             --dir="$(dirname "$out")" --out="$name" "$url" >&2
+    if [[ -z "$IPAD14_BOOTPD" ]]; then
+        IPAD14_LOCAL="$(download_local \
+            "$VZ_IPADOS14_IPSW" \
+            "e6ac263ae3124aa4ca1424ec9d395b0d798c349e9c31f9964783e1ddf58b1446")"
+        "$IPSW" extract --files \
+            --pattern '^usr/libexec/bootpd$' \
+            --output "$IPAD14_OUT" "$IPAD14_LOCAL"
+        rm -f "$IPAD14_LOCAL"
+        rmdir "$VZ_BUILD_ROOT/inputs/.downloads" 2>/dev/null || true
+        # IPSW identities may name this restore image with a different board
+        # list than the historical directory. Resolve by content path.
+        IPAD14_BOOTPD="$(find "$IPAD14_OUT" -type f -path '*/usr/libexec/bootpd' -print -quit)"
+        [[ -n "$IPAD14_BOOTPD" ]] || die "iPadOS 14 bootpd extraction produced no usr/libexec/bootpd"
+        IPAD14_ROOT="${IPAD14_BOOTPD%/usr/libexec/bootpd}"
     fi
-
-    local actual
-    actual="$(shasum -a 256 "$out" | awk '{print $1}')"
-    [[ "$actual" == "$expected" ]] || {
-        rm -f "$out"
-        die "SHA-256 mismatch for $name: expected $expected, got $actual"
-    }
-    printf '%s\n' "$out"
-}
-
-if [[ ! -f "$BIG_SUR_DSC" || ! -f "$BIG_SUR_INTERNET_SHARING" ||
-      ! -f "$BIG_SUR_RTADVD" || ! -f "$BIG_SUR_NETWORK_SHARING_PLIST" ||
-      ! -f "$BIG_SUR_BOOTPD_PLIST" ]]; then
-    BIG_SUR_LOCAL="$(download_local         "$VZ_BIG_SUR_IPSW"         "9bc6b9e0d42bb892ee139a8d88fc5e8ce2931d57743d8e3ed1ce45aa5da8add6")"
-
-    if [[ ! -f "$BIG_SUR_DSC" ]]; then
-        "$IPSW" extract --dyld --dyld-arch arm64e             --output "$VZ_BUILD_ROOT/inputs/macos11" "$BIG_SUR_LOCAL"
-    fi
-
-    if [[ ! -f "$BIG_SUR_INTERNET_SHARING" || ! -f "$BIG_SUR_RTADVD" ||
-          ! -f "$BIG_SUR_NETWORK_SHARING_PLIST" ||
-          ! -f "$BIG_SUR_BOOTPD_PLIST" ]]; then
-        "$IPSW" extract --files             --pattern '^(usr/libexec/InternetSharing|usr/sbin/rtadvd|System/Library/LaunchDaemons/(com\.apple\.NetworkSharing\.plist|bootps\.plist))$'             --output "$VZ_BUILD_ROOT/inputs/macos11" "$BIG_SUR_LOCAL"
-    fi
-
-    rm -f "$BIG_SUR_LOCAL"
-    rmdir "$VZ_BUILD_ROOT/inputs/.downloads" 2>/dev/null || true
-fi
-
-if vz_has_ipados_target 14; then
-if [[ -z "$IPAD14_BOOTPD" ]]; then
-    IPAD14_LOCAL="$(download_local         "$VZ_IPADOS14_IPSW"         "e6ac263ae3124aa4ca1424ec9d395b0d798c349e9c31f9964783e1ddf58b1446")"
-    "$IPSW" extract --files         --pattern '^usr/libexec/bootpd
-    rmdir "$VZ_BUILD_ROOT/inputs/.downloads" 2>/dev/null || true
-fi
-
 fi
 if [[ ! -f "$VMM" || ! -f "$EVENT_TAP" || ! -f "$VZ_LOCALIZABLE" ||
       ! -f "$HV_INFO" || ! -f "$PVG_INFO" ||
