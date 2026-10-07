@@ -228,8 +228,10 @@ if [[ -d "$ROOT/VirtualMac/resources/Localizations" ]]; then
     done
 fi
 
-# Add RootHide storage entitlements while preserving the base executable's
-# existing entitlement set.
+# Add the RootHide baseline entitlements while preserving the base executable's
+# existing entitlement set. RootHide documents platform-application,
+# no-sandbox, AppBundles, and AppDataContainers as the baseline for jailbreak
+# applications and daemons.
 python3 - "$STAGE" <<'PY'
 import pathlib
 import plistlib
@@ -238,6 +240,8 @@ import sys
 
 stage = pathlib.Path(sys.argv[1])
 required = (
+    "platform-application",
+    "com.apple.private.security.no-sandbox",
     "com.apple.private.security.storage.AppBundles",
     "com.apple.private.security.storage.AppDataContainers",
 )
