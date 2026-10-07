@@ -134,7 +134,7 @@ Author: Virtual Mac
 Section: Utilities
 Priority: optional
 Depends: firmware (>= 16.0), firmware (<< 16.4), roothide, dopamine-basebin-link, ellekit
-Conflicts: com.mac.virtual, com.roothide.patcher
+Conflicts: com.mac.virtual
 Tag: role::enduser
 CONTROL
 
@@ -192,10 +192,6 @@ set -eu
 if command -v dpkg-query >/dev/null 2>&1; then
     if dpkg-query -W -f='${Status}' com.mac.virtual 2>/dev/null | grep -q 'install ok installed'; then
         echo "Virtual Mac RootHide cannot be installed while normal Virtual Mac (com.mac.virtual) is installed. Remove the normal package first." >&2
-        exit 1
-    fi
-    if dpkg-query -W -f='${Status}' com.roothide.patcher 2>/dev/null | grep -q 'install ok installed'; then
-        echo "Virtual Mac RootHide cannot be installed while RootHidePatcher (com.roothide.patcher) is installed. Remove RootHidePatcher first." >&2
         exit 1
     fi
 fi
