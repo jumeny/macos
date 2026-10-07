@@ -27,7 +27,8 @@ for key, expected in required.items():
 
 version = fields.get("Version", "")
 if not version or not __import__("re").fullmatch(r"[0-9][0-9A-Za-z.+:~_-]*", version):
-    raise SystemExit(f"missing or invalid control field: Version: {version or "<empty>"}")
+    display_version = version or "<empty>"
+    raise SystemExit(f"missing or invalid control field: Version: {display_version}")
 
 # Binary payloads may legitimately contain RootHide APIs and the
 # runtime's /.jbroot- detection marker. Audit path-bearing package metadata
