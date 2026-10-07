@@ -2,11 +2,22 @@ name: Build RootHide
 
 on:
   workflow_dispatch:
+    inputs:
+      base_deb_url:
+        description: "HTTPS URL for the verified VirtualMac_1.2.3.deb"
+        required: false
+        type: string
+      publish_release:
+        description: "Create/update the 0.0.1b (rh) GitHub release"
+        required: false
+        default: false
+        type: boolean
   push:
-    branches: [roothide-port]
+    tags:
+      - "0.0.1b-rh"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: roothide-build
@@ -16,153 +27,113 @@ jobs:
   validate-roothide-scripts:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Validate shell scripts
+      - uses: actions/checkout@v4
+      - name: Validate RootHide scripts
         shell: bash
         run: |
           set -euo pipefail
-          bash -n VirtualMac/scripts/lib/common.sh
-          bash -n VirtualMac/scripts/prepare-inputs.sh
-          bash -n VirtualMac/scripts/build-ipad-vm.sh
-          bash -n VirtualMac/scripts/build-ipad-network-sharing.sh
-          bash -n VirtualMac/scripts/build-ipad-network-helpers.sh
-          bash -n VirtualMac/scripts/build-ipad-deb.sh
           bash -n VirtualMac/scripts/build-ipad-deb-roothide.sh
-          bash -n VirtualMac/packaging/DEBIAN/postinst
+          bash -n VirtualMac/scripts/development/prepare-roothide-sdk.sh
+          bash -n VirtualMac/scripts/build-ipad-app.sh
+          bash -n VirtualMac/scripts/build-vmm-compat.sh
+          bash -n VirtualMac/vz/install/start-install.sh
+          python3 -m py_compile VirtualMac/scripts/audit-roothide-package-stage.py
+          python3 -m py_compile VirtualMac/vz/patches/add_macho_dylib.py
 
   build-roothide:
     needs: validate-roothide-scripts
     runs-on: macos-14
+    env:
+      VZ_IPADOS_MIN_VERSION: "16.0"
+      BASE_URL_INPUT: ${{ github.event.inputs.base_deb_url }}
     steps:
-      - name: Checkout fork
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install project dependencies
-        shell: bash
-        env:
-          HOMEBREW_BUNDLE_NO_UPGRADE: "1"
+      - name: Install build dependencies
         run: |
           set -euo pipefail
-
-          # The macOS 14 runner image can contain an old openssl@1.1
-          # executable linked into /opt/homebrew/bin. The project's ldid
-          # dependency uses openssl@3; remove only that stale link first.
           brew unlink openssl@1.1 2>/dev/null || true
-
-          # Keep CI focused on the actual package build. Deployment-only
-          # tooling (sshpass/libimobiledevice) is intentionally absent from
-          # VirtualMac/Brewfile, so no third-party tap is needed here.
           brew bundle install --no-upgrade --file=VirtualMac/Brewfile
-
-          required_commands=(
-            aria2c
-            dpkg-deb
-            gtar
-            go
-            ldid
-            python3
-            rsync
-            codesign
-            ditto
-            dwarfdump
-            install_name_tool
-            lipo
-            otool
-            plutil
-            shasum
-            sips
-            iconutil
-            xcrun
-          )
-
-          for command_name in "${required_commands[@]}"; do
+          for command_name in dpkg-deb ldid python3 xcrun curl unzip rsync; do
             command -v "$command_name" >/dev/null 2>&1 || {
-              echo "ERROR: required build command is missing: $command_name" >&2
+              echo "missing required command: $command_name" >&2
               exit 1
             }
           done
 
-          echo "Installed project dependencies:"
-          brew bundle list --file=VirtualMac/Brewfile
-          echo
-          echo "Tool versions:"
-          dpkg-deb --version
-          ldid -V || true
-          go version
-          python3 --version
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
-
-      - name: Bootstrap pinned build toolchain
-
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x VirtualMac/scripts/bootstrap.sh
-          VirtualMac/scripts/bootstrap.sh
-
-          test -x VirtualMac/build/toolchain/venv/bin/python3
-          test -x VirtualMac/build/toolchain/venv/bin/dyldex
-          test -x VirtualMac/build/toolchain/bin/ipsw-a2sb
-
-          VirtualMac/build/toolchain/venv/bin/python3 --version
-          VirtualMac/build/toolchain/venv/bin/dyldex --help >/dev/null
-          VirtualMac/build/toolchain/bin/ipsw-a2sb dyld a2sb --help >/dev/null
-
-      - name: Show Xcode toolchain
-        run: |
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
-          xcrun --sdk macosx --show-sdk-version
-          clang --version
-
-      - name: Restore dyld extraction cache
-        uses: actions/cache@v4
-        with:
-          path: VirtualMac/build/frameworks/raw
-          key: roothide-dyld-raw-v1-${{ hashFiles('VirtualMac/requirements.lock.txt', 'VirtualMac/scripts/bootstrap.sh', 'VirtualMac/scripts/build-frameworks.sh') }}
-
-      - name: Build RootHide package
+      - name: Acquire verified base runtime
         shell: bash
         env:
+          VZ_BASE_DEB_URL: ${{ github.event.inputs.base_deb_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p VirtualMac/build/downloads
+          base="VirtualMac/build/downloads/VirtualMac_1.2.3.deb"
+          url="${VZ_BASE_DEB_URL:-}"
+          if [[ -z "$url" ]]; then
+            url="${VZ_DEFAULT_BASE_DEB_URL:-}"
+          fi
+          if [[ -n "$url" ]]; then
+            curl --fail --location --retry 3 --output "$base.part" "$url"
+            mv "$base.part" "$base"
+          fi
+          test -f "$base" || {
+            echo "No base runtime supplied. Pass workflow_dispatch input base_deb_url or configure VZ_DEFAULT_BASE_DEB_URL." >&2
+            exit 2
+          }
+          echo "Base SHA-256:"
+          shasum -a 256 "$base"
+          expected=435ce1dc76b9e18b1547c77b84e2cf33ffe40a16be63e366f181d14709a41aa0
+          actual="$(shasum -a 256 "$base" | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] || {
+            echo "Base runtime checksum mismatch." >&2
+            exit 3
+          }
+
+      - name: Bootstrap RootHide SDK
+        run: |
+          set -euo pipefail
+          chmod +x VirtualMac/scripts/development/prepare-roothide-sdk.sh
+          VirtualMac/scripts/development/prepare-roothide-sdk.sh
+
+      - name: Build RootHide package from base runtime
+        env:
           VZ_ROOTHIDE: "1"
-          # Development/release CI targets the actual RootHide host family first.
-          # This does not restrict the macOS guest restore images a user can
-          # install later; the Ventura IPSW here supplies the host virtualization runtime.
-          VZ_IPADOS_TARGETS: "16"
-          VZ_IPADOS_MIN_VERSION: "16.0"
-          VZ_AUDIT_HOST_VERSIONS: "16.3.1"
-          VZ_MACOS_IPSW: "https://updates.cdn-apple.com/2023WinterFCS/fullrestores/032-48346/EFF99C1E-C408-4E7A-A448-12E1468AF06C/UniversalMac_13.2.1_22D68_Restore.ipsw"
+          VZ_PACKAGE_VERSION: "0.0.1b+rh"
         run: |
           set -euo pipefail
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
-          echo "Disk before build:"
-          df -h "$GITHUB_WORKSPACE"
-          echo "Build started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          time VirtualMac/scripts/build-ipad-deb-roothide.sh
+          VZ_BASE_DEB=VirtualMac/build/downloads/VirtualMac_1.2.3.deb             VirtualMac/scripts/build-ipad-deb-roothide.sh
 
-      - name: Audit RootHide package layout
-        shell: bash
+      - name: Audit package
         run: |
           set -euo pipefail
-          deb="$(find VirtualMac/build/release-roothide -name '*.deb' -print | head -n1)"
+          deb="$(find VirtualMac/build/release-roothide -maxdepth 1 -name 'VirtualMac-RootHide-0.0.1b+rh.deb' -print -quit)"
           test -n "$deb"
-          dpkg-deb -c "$deb" | tee /tmp/package-list.txt
-          grep -F "Applications/VirtualMac.app/" /tmp/package-list.txt
-          grep -F "User/Library/VirtualMac/payload/" /tmp/package-list.txt
-          ! grep -F "/var/root/VirtualMac" /tmp/package-list.txt
-          ! grep -F "/var/jb/" /tmp/package-list.txt
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb" | tee /tmp/roothide-package.txt
+          grep -F "Applications/VirtualMac.app/" /tmp/roothide-package.txt
+          grep -F "User/Library/VirtualMac/payload/" /tmp/roothide-package.txt
+          ! grep -F "/var/jb/" /tmp/roothide-package.txt
+          ! grep -F "/var/root/VirtualMac" /tmp/roothide-package.txt
+          python3 VirtualMac/scripts/audit-roothide-package-stage.py VirtualMac/build/release-roothide/stage
 
-      - name: Upload RootHide package
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VirtualMac-RootHide-deb
-          path: VirtualMac/build/release-roothide/*.deb
+          name: VirtualMac-RootHide-0.0.1b-rh
+          path: VirtualMac/build/release-roothide/VirtualMac-RootHide-0.0.1b+rh.deb
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/0.0.1b-rh') || github.event.inputs.publish_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: 0.0.1b-rh
+          name: "0.0.1b (rh)"
+          prerelease: true
+          generate_release_notes: true
+          files: VirtualMac/build/release-roothide/VirtualMac-RootHide-0.0.1b+rh.deb
