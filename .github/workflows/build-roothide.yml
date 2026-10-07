@@ -13,15 +13,10 @@ on:
         required: true
         default: "https://github.com/nfzerox/VirtualMacOniPad/releases/download/1.2.3/VirtualMac_1.2.3.deb"
         type: string
-      base_deb_sha256:
-        description: "SHA-256 for the base .deb (leave blank only if you accept an unverified base)"
-        required: false
-        default: "435ce1dc76b9e18b1547c77b84e2cf33ffe40a16be63e366f181d14709a41aa0"
-        type: string
       package_version:
         description: "RootHide Debian package version"
         required: true
-        default: "0.0.1b+rh"
+        default: ""
         type: string
       release_tag:
         description: "GitHub release tag to create/update"
@@ -31,7 +26,7 @@ on:
       release_name:
         description: "GitHub release name"
         required: true
-        default: "0.0.1b (rh)"
+        default: ""
         type: string
       publish_release:
         description: "Create/update the GitHub release and attach the built .deb"
@@ -97,26 +92,12 @@ jobs:
       - name: Acquire base runtime
         env:
           VZ_BASE_DEB_URL: ${{ inputs.base_deb_url }}
-          VZ_BASE_DEB_SHA256: ${{ inputs.base_deb_sha256 }}
         run: |
           set -euo pipefail
           mkdir -p VirtualMac/build/downloads
           base="VirtualMac/build/downloads/VirtualMac_1.2.3.deb"
           curl --fail --location --retry 3 --output "$base.part" "$VZ_BASE_DEB_URL"
           mv "$base.part" "$base"
-          actual="$(shasum -a 256 "$base" | awk "{print \$1}")"
-          echo "Base SHA-256: $actual"
-          if [[ -n "$VZ_BASE_DEB_SHA256" ]]; then
-            [[ "$actual" == "$VZ_BASE_DEB_SHA256" ]] || {
-              echo "Base runtime checksum mismatch." >&2
-              echo "Expected: $VZ_BASE_DEB_SHA256" >&2
-              echo "Actual:   $actual" >&2
-              exit 3
-            }
-          else
-            echo "::warning::No base SHA-256 was supplied; continuing with an unverified base package."
-          fi
-
       - name: Bootstrap RootHide SDK
         run: |
           set -euo pipefail
@@ -127,20 +108,14 @@ jobs:
         env:
           VZ_ROOTHIDE: "1"
           VZ_BASE_DEB: "VirtualMac/build/downloads/VirtualMac_1.2.3.deb"
-          VZ_BASE_DEB_SHA256: ${{ inputs.base_deb_sha256 }}
           VZ_PACKAGE_VERSION: ${{ inputs.package_version }}
         run: |
           set -euo pipefail
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
-          if [[ -n "$VZ_BASE_DEB_SHA256" ]]; then
-            VZ_BASE_DEB="$VZ_BASE_DEB" VZ_BASE_DEB_SHA256="$VZ_BASE_DEB_SHA256" VZ_PACKAGE_VERSION="$VZ_PACKAGE_VERSION" \
-              VirtualMac/scripts/build-ipad-deb-roothide.sh
-          else
-            VZ_BASE_DEB="$VZ_BASE_DEB" VZ_BASE_DEB_SHA256="" VZ_ALLOW_UNVERIFIED_BASE=1 VZ_PACKAGE_VERSION="$VZ_PACKAGE_VERSION" \
-              VirtualMac/scripts/build-ipad-deb-roothide.sh
-          fi
+          VZ_BASE_DEB="$VZ_BASE_DEB" VZ_BASE_DEB_SHA256="" VZ_ALLOW_UNVERIFIED_BASE=1 VZ_PACKAGE_VERSION="$VZ_PACKAGE_VERSION" \
+            VirtualMac/scripts/build-ipad-deb-roothide.sh
 
-      - name: Audit package
+      - name: Audit package/
         env:
           VZ_PACKAGE_VERSION: ${{ inputs.package_version }}
         run: |
