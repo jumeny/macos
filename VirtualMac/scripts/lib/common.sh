@@ -42,7 +42,11 @@ if vz_has_ipados_target 16 && ! vz_has_ipados_target 14 &&
     VZ_IPADOS_MIN_VERSION=16.0
 fi
 
-export VZ_IPADOS_TARGETS VZ_IPADOS_MIN_VERSION
+VZ_IPADOS_16_ONLY=0
+if [[ "$VZ_IPADOS_TARGETS" == "16" ]]; then
+    VZ_IPADOS_16_ONLY=1
+fi
+export VZ_IPADOS_TARGETS VZ_IPADOS_MIN_VERSION VZ_IPADOS_16_ONLY
 
 if [[ "${VZ_IGNORE_ENV_FILE:-0}" != 1 && -f "$VZ_REPO_ROOT/.env" ]]; then
     set -a
