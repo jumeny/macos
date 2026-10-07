@@ -23,7 +23,6 @@ if [ "$#" -ne 7 ]; then
     exit 2
 fi
 
-remote=/var/root/VirtualMac
 host_version=$(sw_vers -productVersion)
 ipsw=$1
 staging=$2
