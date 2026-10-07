@@ -107,6 +107,7 @@ if [[ ! -f "$BIG_SUR_DSC" || ! -f "$BIG_SUR_INTERNET_SHARING" ||
     rm -f "$BIG_SUR_LOCAL"
     rmdir "$VZ_BUILD_ROOT/inputs/.downloads" 2>/dev/null || true
 fi
+fi
 
 if vz_has_ipados_target 14; then
     if [[ ! -f "$IPAD14_BOOTPD" ]]; then
