@@ -147,8 +147,8 @@ VMM="$RUNTIME/payload/VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization
 INSTALLER="$RUNTIME/payload/Installation.xpc/Contents/MacOS/com.apple.Virtualization.Installation"
 test -f "$VMM.ipados16"
 test -f "$INSTALLER.ipados16"
-cp -f "$VMM.ipados16" "$VMM"
-cp -f "$INSTALLER.ipados16" "$INSTALLER"
+test -f "$VMM"
+test -f "$INSTALLER"
 
 for plist in "$JBROOT/Library/LaunchDaemons/"*.plist; do
     test -f "$plist" || continue
