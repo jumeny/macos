@@ -188,9 +188,21 @@ hash_line() {
     printf 'python\t%s\n' "$("$VZ_BUILD_ROOT/toolchain/venv/bin/python3" --version 2>&1)"
     printf 'dyldextractor\t2.2.2+VirtualMac-arm64e\n'
     printf 'macos_ipsw_sha256\t%s\n' '0310220c8a540dc53a92ec9f9e0894db627d8f97fd18c3275eb96865a6e5fe04'
-    printf 'big_sur_ipsw_sha256\t%s\n' '9bc6b9e0d42bb892ee139a8d88fc5e8ce2931d57743d8e3ed1ce45aa5da8add6'
-    printf 'ipados14_ipsw_sha256\t%s\n' 'e6ac263ae3124aa4ca1424ec9d395b0d798c349e9c31f9964783e1ddf58b1446'
-    hash_line big_sur_dsc "$BIG_SUR_DSC"
+    if vz_has_ipados_target 14; then
+        printf 'big_sur_ipsw_sha256\t%s\n' '9bc6b9e0d42bb892ee139a8d88fc5e8ce2931d57743d8e3ed1ce45aa5da8add6'
+    else
+        printf 'big_sur_ipsw_sha256\tskipped\n'
+    fi
+    if vz_has_ipados_target 14; then
+        printf 'ipados14_ipsw_sha256\t%s\n' 'e6ac263ae3124aa4ca1424ec9d395b0d798c349e9c31f9964783e1ddf58b1446'
+    else
+        printf 'ipados14_ipsw_sha256\tskipped\n'
+    fi
+    if vz_has_ipados_target 14; then
+        hash_line big_sur_dsc "$BIG_SUR_DSC"
+    else
+        printf 'big_sur_dsc\tskipped\n'
+    fi
     hash_line macos_dsc "$DSC"
     hash_line macos_dsc_01 "$DSC.01"
     if [[ "$INCLUDE_IPADOS_AUDIT" == 1 ]]; then
