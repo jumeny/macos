@@ -20,7 +20,7 @@ required = {
     "Package": "com.mac.virtual.roothide",
     "Architecture": "iphoneos-arm64e",
     "Depends": "firmware (>= 16.0), firmware (<< 16.4), roothide, dopamine-basebin-link, ellekit",
-    "Conflicts": "com.mac.virtual, com.roothide.patcher",
+    "Conflicts": "com.mac.virtual",
 }
 for key, expected in required.items():
     if fields.get(key) != expected:
