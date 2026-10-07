@@ -19,15 +19,21 @@ for line in required:
     if line not in control:
         raise SystemExit(f"missing control field: {line}")
 
-for forbidden in ("/var/jb/", "/var/root/VirtualMac", ".jbroot-"):
-    for item in stage.rglob("*"):
-        if item.is_file() and not item.is_symlink():
-            try:
-                data = item.read_bytes()
-            except OSError:
-                continue
-            if forbidden.encode() in data:
-                raise SystemExit(f"forbidden absolute RootHide path leaked into {item}: {forbidden}")
+# Binary payloads may legitimately contain RootHide APIs and the
+# runtime's /.jbroot- detection marker. Audit path-bearing package metadata
+# instead of treating arbitrary binary strings as path leaks.
+for item in stage.rglob("*"):
+    if not item.is_file() or item.is_symlink():
+        continue
+    if item.suffix not in {".plist", ".sh", ".xml", ""} and item.name != "control":
+        continue
+    try:
+        data = item.read_text(errors="ignore")
+    except OSError:
+        continue
+    for forbidden in ("/var/jb/", "/var/root/VirtualMac"):
+        if forbidden in data:
+            raise SystemExit(f"forbidden absolute RootHide path leaked into {item}: {forbidden}")
 
 runtime = stage / "User/Library/VirtualMac"
 app = stage / "Applications/VirtualMac.app"
