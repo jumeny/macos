@@ -9,16 +9,25 @@ if stage is None or not stage.is_dir():
     raise SystemExit("usage: audit-roothide-package-stage.py STAGE")
 
 control = (stage / "DEBIAN/control").read_text()
-expected_version = __import__("os").environ.get("VZ_PACKAGE_VERSION", "0.0.1b+rh")
-required = [
-    "Package: com.mac.virtual",
-    f"Version: {expected_version}",
-    "Architecture: iphoneos-arm64e",
-    "Depends: firmware (>= 16.0), firmware (<< 16.4), roothide",
-]
-for line in required:
-    if line not in control:
-        raise SystemExit(f"missing control field: {line}")
+fields = {}
+for line in control.splitlines():
+    if not line or line[0].isspace() or ":" not in line:
+        continue
+    key, value = line.split(":", 1)
+    fields[key] = value.strip()
+
+required = {
+    "Package": "com.mac.virtual",
+    "Architecture": "iphoneos-arm64e",
+    "Depends": "firmware (>= 16.0), firmware (<< 16.4), roothide",
+}
+for key, expected in required.items():
+    if fields.get(key) != expected:
+        raise SystemExit(f"missing or incorrect control field: {key}: {expected}")
+
+version = fields.get("Version", "")
+if not version or not __import__("re").fullmatch(r"[0-9][0-9A-Za-z.+:~_-]*", version):
+    raise SystemExit(f"missing or invalid control field: Version: {version or "<empty>"}")
 
 # Binary payloads may legitimately contain RootHide APIs and the
 # runtime's /.jbroot- detection marker. Audit path-bearing package metadata
