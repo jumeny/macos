@@ -7,16 +7,11 @@ on:
         description: "HTTPS URL for the base Virtual Mac .deb"
         required: true
         type: string
-      package_version:
-        description: "Debian package version (also used as the GitHub release tag and release name)"
-        required: true
-        type: string
-
 permissions:
   contents: write
 
 concurrency:
-  group: roothide-build-${{ inputs.package_version }}
+  group: roothide-build
   cancel-in-progress: true
 
 jobs:
@@ -33,10 +28,6 @@ jobs:
           set -euo pipefail
           test -n "${{ inputs.base_deb_url }}" || {
             echo "base_deb_url must not be empty" >&2
-            exit 1
-          }
-          test -n "${{ inputs.package_version }}" || {
-            echo "package_version must not be empty" >&2
             exit 1
           }
           bash -n VirtualMac/scripts/build-ipad-deb-roothide.sh
@@ -91,20 +82,22 @@ jobs:
         env:
           VZ_ROOTHIDE: "1"
           VZ_BASE_DEB: "VirtualMac/build/downloads/base-runtime.deb"
-          VZ_PACKAGE_VERSION: ${{ inputs.package_version }}
         run: |
           set -euo pipefail
           chmod +x VirtualMac/scripts/build-ipad-deb-roothide.sh
-          VZ_BASE_DEB="$VZ_BASE_DEB" VZ_BASE_DEB_SHA256="" VZ_ALLOW_UNVERIFIED_BASE=1 VZ_PACKAGE_VERSION="$VZ_PACKAGE_VERSION" \
+          VZ_BASE_DEB="$VZ_BASE_DEB" VZ_BASE_DEB_SHA256="" VZ_ALLOW_UNVERIFIED_BASE=1 \
             VirtualMac/scripts/build-ipad-deb-roothide.sh
 
       - name: Audit package
-        env:
-          VZ_PACKAGE_VERSION: ${{ inputs.package_version }}
+        id: package_metadata
         run: |
           set -euo pipefail
-          deb="VirtualMac/build/release-roothide/VirtualMac-RootHide-$VZ_PACKAGE_VERSION.deb"
-          test -f "$deb"
+          deb="$(find VirtualMac/build/release-roothide -maxdepth 1 -type f -name 'VirtualMac-RootHide-*.deb' -print -quit)"
+          test -n "$deb"
+          version="$(dpkg-deb -f "$deb" Version)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Built Debian version: $version"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb" | tee /tmp/roothide-package.txt
           grep -F "Applications/VirtualMac.app/" /tmp/roothide-package.txt
@@ -116,16 +109,16 @@ jobs:
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VirtualMac-RootHide-${{ inputs.package_version }}
-          path: VirtualMac/build/release-roothide/VirtualMac-RootHide-${{ inputs.package_version }}.deb
+          name: VirtualMac-RootHide-${{ steps.package_metadata.outputs.version }}
+          path: VirtualMac/build/release-roothide/VirtualMac-RootHide-${{ steps.package_metadata.outputs.version }}.deb
           if-no-files-found: error
           retention-days: 30
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.package_version }}
-          name: ${{ inputs.package_version }}
+          tag_name: ${{ steps.package_metadata.outputs.version }}
+          name: ${{ steps.package_metadata.outputs.version }}
           prerelease: true
           generate_release_notes: true
           files: VirtualMac/build/release-roothide/VirtualMac-RootHide-${{ inputs.package_version }}.deb
