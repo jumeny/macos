@@ -38,7 +38,9 @@ need_command plutil
 need_command xcrun
 need_file "$SOURCE_BIN"
 need_file "$SOURCE_PLIST"
-need_file "$BIG_SUR_SOURCE_BIN"
+if (( ! VZ_IPADOS_16_ONLY )); then
+    need_file "$BIG_SUR_SOURCE_BIN"
+fi
 need_file "$DSC"
 need_file "$PYTHON"
 need_file "$DYLDEX"
@@ -124,6 +126,9 @@ install_name_tool -change /usr/lib/libmrc.dylib \
     @loader_path/../lib/libmrc.dylib "$BIN.ipados15"
 codesign --force --sign - --entitlements "$ENTS" \
     --generate-entitlement-der "$BIN.ipados15"
+if (( VZ_IPADOS_16_ONLY )); then
+    cp "$BIN.ipados15" "$BIN.ipados14"
+else
 lipo -thin arm64e "$BIG_SUR_SOURCE_BIN" -output "$BIN.ipados14.macos"
 install_name_tool \
     -change /System/Library/PrivateFrameworks/PacketFilter.framework/Versions/A/PacketFilter \
@@ -148,6 +153,7 @@ install_name_tool \
     @loader_path/../lib/NetworkMemoryPolicy.dylib
 codesign --force --sign - --entitlements "$ENTS" \
     --generate-entitlement-der "$BIN.ipados14"
+fi
 rm -f "$BIN.ipados14.macos"
 ldid -S "$AUTH_COMPAT"
 rm -f "$BIN.macos"
