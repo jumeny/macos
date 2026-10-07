@@ -65,8 +65,10 @@ need_file "$MACHO_CSTRING_PATCH"
 need_file "$ENTITLEMENT_AUDIT"
 need_file "$IPADOS15_OBJC_PATCH"
 need_file "$IPADOS15_OBJC_IMPORT_PATCH"
-need_file "$IPADOS14_VMM_VMNET_PATCH"
-need_file "$IPADOS14_VMM_VIDEOTOOLBOX_PATCH"
+if (( ! VZ_IPADOS_16_ONLY )); then
+    need_file "$IPADOS14_VMM_VMNET_PATCH"
+    need_file "$IPADOS14_VMM_VIDEOTOOLBOX_PATCH"
+fi
 need_file "$VZ_REPO_ROOT/vz/host/pvg_trace.m"
 need_file "$VZ_REPO_ROOT/vz/shaders/pvg_display.metal"
 
@@ -154,6 +156,7 @@ need_file "$VIDEOTOOLBOX_FRAMEWORK/VideoToolbox"
 need_file "$VIDEOTOOLBOX_PV_FRAMEWORK/VideoToolboxParavirtualizationSupport"
 need_file "$DISKIMAGES2_FRAMEWORK/Versions/A/DiskImages2"
 
+if (( ! VZ_IPADOS_16_ONLY )); then
 if [[ "${VZ_REUSE_EXTRACTED_RUNTIME:-0}" != 1 ||
       ! -f "$IPADOS14_VMNET_FRAMEWORK/vmnet" ||
       ! -f "$IPADOS14_NETRB_FRAMEWORK/Netrb" ]]; then
@@ -162,6 +165,7 @@ fi
 need_file "$IPADOS14_VMNET_FRAMEWORK/vmnet"
 need_file "$IPADOS14_NETRB_FRAMEWORK/Netrb"
 
+fi
 rm -rf "$PAYLOAD"
 mkdir -p "$BIN" "$FRAMEWORKS"
 for name in Hypervisor ParavirtualizedGraphics Virtualization; do
@@ -398,11 +402,47 @@ codesign --force --sign - \
     --preserve-metadata=entitlements,requirements,flags,runtime "$PVG_BINARY"
 ldid -S"$VMM_ENTS" "$VMM_BIN"
 
-# iPadOS 15's native DiskImages2 predates the C++ ABI used by Ventura's VMM.
-# Preserve the established iPadOS 16 binary verbatim and build a second VMM
-# whose only difference is loading the bundled matching Ventura framework.
-# postinst selects the appropriate binary from the actual host version.
 VMM_IPADOS16="$VMM_BIN.ipados16"
+cp "$VMM_BIN" "$VMM_IPADOS16"
+
+if (( VZ_IPADOS_16_ONLY )); then
+    # Keep legacy package slots structurally complete without running legacy
+    # iPadOS 14/15 dyld or Big Sur reconstruction on the fast profile.
+    VMM_IPADOS15="$VMM_BIN.ipados15"
+    VMM_IPADOS14="$VMM_BIN.ipados14"
+    cp "$VMM_BIN" "$VMM_IPADOS15"
+    cp "$VMM_BIN" "$VMM_IPADOS14"
+    ldid -Icom.apple.Virtualization.VirtualMachine -S"$VMM_ENTS" "$VMM_IPADOS15"
+    cp "$VMM_ENTS" "$VMM_IPADOS14_ENTS"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.MobileInternetSharing.allow bool true" "$VMM_IPADOS14_ENTS"
+    ldid -Icom.apple.Virtualization.VirtualMachine -S"$VMM_IPADOS14_ENTS" "$VMM_IPADOS14"
+    VMM_HOOK_IPADOS14="$VMM_FRAMEWORKS/LaunchServicesCompat.dylib.ipados14"
+    cp "$VMM_FRAMEWORKS/LaunchServicesCompat.dylib" "$VMM_HOOK_IPADOS14"
+    ldid -ILaunchServicesCompat.dylib -S"$VMM_IPADOS14_ENTS" "$VMM_HOOK_IPADOS14"
+    mkdir -p "$IPADOS15_COMPAT" "$IPADOS15_AUTH_COMPAT" "$IPADOS14_COMPAT"
+    for pair in \
+        "Hypervisor|$FRAMEWORKS/Hypervisor.framework/Versions/A/Hypervisor" \
+        "ParavirtualizedGraphics|$FRAMEWORKS/ParavirtualizedGraphics.framework/Versions/A/ParavirtualizedGraphics" \
+        "Virtualization|$FRAMEWORKS/Virtualization.framework/Versions/A/Virtualization" \
+        "MetalSerializer|$FRAMEWORKS/MetalSerializer.framework/Versions/A/MetalSerializer" \
+        "VideoToolbox|$VMM_FRAMEWORKS/VideoToolbox.framework/VideoToolbox" \
+        "DiskImages2|$VMM_FRAMEWORKS/DiskImages2.framework/Versions/A/DiskImages2"; do
+        name="${pair%%|*}"
+        source="${pair#*|}"
+        cp "$source" "$IPADOS15_AUTH_COMPAT/$name"
+        cp "$source" "$IPADOS15_COMPAT/$name"
+        cp "$source" "$IPADOS14_COMPAT/$name"
+        codesign --force --sign - "$IPADOS15_AUTH_COMPAT/$name"
+        codesign --force --sign - "$IPADOS15_COMPAT/$name"
+        codesign --force --sign - "$IPADOS14_COMPAT/$name"
+    done
+    cp "$IOKIT15_COMPAT" "$IPADOS14_COMPAT/IOKit15Compat.dylib"
+    cp "$LIBSYSTEM15_COMPAT" "$IPADOS14_COMPAT/LibSystemCompat.dylib"
+    cp "$FRAMEWORKS/Hypervisor.framework/Versions/A/Hypervisor" "$IPADOS14_COMPAT/HypervisorBigSur"
+    cp "$VMM_FRAMEWORKS/vmnet.framework/vmnet" "$IPADOS14_COMPAT/vmnet"
+    cp "$VMM_FRAMEWORKS/Netrb.framework/Netrb" "$IPADOS14_COMPAT/Netrb"
+    cp "$LIBSYSTEM15_COMPAT" "$VMM_FRAMEWORKS/LibCxx.dylib"
+else
 VMM_IPADOS15="$VMM_BIN.ipados15"
 VMM_IPADOS14="$VMM_BIN.ipados14"
 cp "$VMM_BIN" "$VMM_IPADOS16"
@@ -564,6 +604,8 @@ cp "$IPADOS14_HV/LibCxx.dylib" "$VMM_FRAMEWORKS/LibCxx.dylib"
 cp "$IPADOS14_VMNET_FRAMEWORK/vmnet" "$IPADOS14_COMPAT/vmnet"
 cp "$IPADOS14_NETRB_FRAMEWORK/Netrb" "$IPADOS14_COMPAT/Netrb"
 
+
+fi
 # Finder and BridgeSupport metadata from the extracted frameworks are not
 # used by the Objective-C runtime. Remove them before resealing every
 # structured framework whose resource envelope may have referenced them.
