@@ -5,13 +5,16 @@
 # handoff, then starts the real Apple installation stack in the background.
 
 set -eu
-# System applications do not inherit the interactive jailbreak shell PATH.
-# Keep every utility used below resolvable when this script is exec'd by the
-# setuid install-launcher from UIKit.
-jb_prefix=/var/jb
-test -x /var/jb/usr/bin/launchctl || jb_prefix=
+# Resolve the runtime from the installed script location. Under RootHide
+# this stays inside the randomized jbroot; outside RootHide it resolves to the
+# traditional /var/root/VirtualMac package path.
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+remote="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+jbroot="$(CDPATH= cd -- "$remote/../../.." && pwd)"
+jb_prefix="$jbroot"
+test -x "$jb_prefix/usr/bin/launchctl" || jb_prefix=
 launchctl="$jb_prefix/usr/bin/launchctl"
-PATH=/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin
+PATH="$jbroot/usr/bin:$jbroot/bin:/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 trap 'status=$?; if [ "$status" -ne 0 ] && { [ -z "${log:-}" ] || ! grep -q "INSTALL_FAILED" "$log" 2>/dev/null; }; then echo "INSTALL_FAILED launcher status=$status"; fi' EXIT
 
