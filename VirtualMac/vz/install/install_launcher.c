@@ -195,15 +195,26 @@ int main(int argc, char **argv)
                 strerror(errno));
         return 1;
     }
-    if (setenv("PATH",
-               "/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-               1) != 0) {
+    const char *bootstrap_root =
+#if defined(VZ_ROOTHIDE)
+        jbroot("/");
+#else
+        "/var/jb";
+#endif
+    char path_environment[PATH_MAX];
+    snprintf(path_environment, sizeof(path_environment),
+             "%s/usr/bin:%s/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+             bootstrap_root, bootstrap_root);
+    if (setenv("PATH", path_environment, 1) != 0) {
         fprintf(stderr, "INSTALL_FAILED\tlauncher cannot set PATH: %s\n",
                 strerror(errno));
         return 1;
     }
+    char start_install[PATH_MAX];
+    snprintf(start_install, sizeof(start_install), "%s/install/start-install.sh",
+             runtime_root());
     execl(bootstrap_tool("/var/jb/bin/sh", "/bin/sh"), "sh",
-          "/var/root/VirtualMac/install/start-install.sh", argv[1],
+          start_install, argv[1],
           argv[2], argv[3], argv[4], argv[5], argv[6], argv[7],
           (char *)NULL);
     fprintf(stderr, "INSTALL_FAILED\tlauncher exec failed: %s\n",
