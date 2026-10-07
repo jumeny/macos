@@ -160,9 +160,10 @@ test -f "$INSTALLER.ipados16"
 test -f "$VMM"
 test -f "$INSTALLER"
 
+legacy_runtime="/var""/root/VirtualMac"
 for plist in "$JBROOT/Library/LaunchDaemons/"*.plist; do
     test -f "$plist" || continue
-    sed -i '' "s#/var/jb#$JBROOT#g; s#/var/root/VirtualMac#$RUNTIME#g" "$plist" 2>/dev/null || true
+    sed -i '' "s#/var/jb#$JBROOT#g; s#$legacy_runtime#$RUNTIME#g" "$plist" 2>/dev/null || true
 done
 
 if command -v launchctl >/dev/null 2>&1; then
