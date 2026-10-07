@@ -62,6 +62,10 @@ rsync -a "$SOURCE/var/jb/usr/libexec/" "$STAGE/usr/libexec/"
 rsync -a "$SOURCE/var/jb/usr/sbin/" "$STAGE/usr/sbin/"
 rsync -a "$SOURCE/var/jb/usr/bin/" "$STAGE/usr/bin/" 2>/dev/null || true
 rsync -a "$SOURCE/var/jb/Library/LaunchDaemons/" "$STAGE/Library/LaunchDaemons/" 2>/dev/null || true
+for plist in "$STAGE/Library/LaunchDaemons/"*.plist; do
+    [[ -f "$plist" ]] || continue
+    sed -i ''         -e 's#/var/jb##g'         -e 's#/var/root/VirtualMac#/User/Library/VirtualMac#g'         "$plist"
+done
 
 # Rebuild the RootHide-aware app and VMM hook, but do not extract any IPSW.
 VZ_ROOTHIDE_SDK="$ROOTHIDE_SDK" "$SCRIPT_DIR/build-ipad-app.sh"
@@ -244,8 +248,8 @@ for file in stage.rglob("*"):
     try:
         raw = subprocess.check_output(["ldid", "-e", str(file)], stderr=subprocess.DEVNULL)
         ent = plistlib.loads(raw) if raw.strip() else {}
-    except Exception:
-        continue
+    except subprocess.CalledProcessError:
+        ent = {}
     changed = False
     for key in required:
         if ent.get(key) is not True:
