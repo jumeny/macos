@@ -13,6 +13,8 @@ on:
         default: false
         type: boolean
   push:
+    branches:
+      - roothide-port
     tags:
       - "0.0.1b-rh"
 
@@ -73,7 +75,7 @@ jobs:
           base="VirtualMac/build/downloads/VirtualMac_1.2.3.deb"
           url="${VZ_BASE_DEB_URL:-}"
           if [[ -z "$url" ]]; then
-            url="${VZ_DEFAULT_BASE_DEB_URL:-}"
+            url="${VZ_DEFAULT_BASE_DEB_URL:-https://github.com/nfzerox/VirtualMacOniPad/releases/download/1.2.3/VirtualMac_1.2.3.deb}"
           fi
           if [[ -n "$url" ]]; then
             curl --fail --location --retry 3 --output "$base.part" "$url"
