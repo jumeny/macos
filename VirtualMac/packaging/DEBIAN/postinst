@@ -8,6 +8,15 @@ tweak_payload=$runtime/bootstrap-common/usr/lib/TweakInject
 library=/var/mobile/Media/VirtualMac
 support=$library
 host_version="$(sw_vers -productVersion)"
+if test -f "$runtime/host-targets"; then
+    host_targets="$(cat "$runtime/host-targets")"
+    case "$host_version" in
+        14.*) test ",$host_targets," = *",14,"* || { echo "Virtual Mac: this package does not support iPadOS 14" >&2; exit 1; } ;;
+        15.*) test ",$host_targets," = *",15,"* || { echo "Virtual Mac: this package does not support iPadOS 15" >&2; exit 1; } ;;
+        16.*) test ",$host_targets," = *",16,"* || { echo "Virtual Mac: this package does not support iPadOS 16" >&2; exit 1; } ;;
+        *) echo "Virtual Mac: unsupported iPadOS host $host_version" >&2; exit 1 ;;
+    esac
+fi
 objc_class_data_auth=0
 # iPadOS changed Objective-C class-data authentication during iPadOS 15.
 # Detect the actual libobjc implementation: the newer runtime's safe_ro helper is present 
