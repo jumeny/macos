@@ -8,6 +8,9 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#if defined(VZ_ROOTHIDE)
+#include <roothide.h>
+#endif
 
 static int has_prefix(const char *value, const char *prefix)
 {
@@ -43,14 +46,32 @@ static int is_direct_child(const char *value, const char *parent)
 
 static const char *bootstrap_tool(const char *rootless, const char *rootful)
 {
+#if defined(VZ_ROOTHIDE)
+    static char resolved[PATH_MAX];
+    if (strncmp(rootless, "/var/jb/", 8) == 0) {
+        snprintf(resolved, sizeof(resolved), "%s%s",
+                 jbroot("/"), rootless + 7);
+        return resolved;
+    }
+#endif
     return access(rootless, X_OK) == 0 ? rootless : rootful;
+}
+
+static const char *runtime_root(void)
+{
+#if defined(VZ_ROOTHIDE)
+    return jbroot("/User/Library/VirtualMac");
+#else
+    return "/var/root/VirtualMac";
+#endif
 }
 
 int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "--diagnose") == 0) {
-        const char *script =
-            "/var/root/VirtualMac/install/start-install.sh";
+        char script[PATH_MAX];
+        snprintf(script, sizeof(script), "%s/install/start-install.sh",
+                 runtime_root());
         struct stat info;
         printf("launcher uid=%u euid=%u gid=%u egid=%u\n",
                getuid(), geteuid(), getgid(), getegid());
